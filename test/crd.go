@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // Route returns a Route object in namespace
@@ -139,6 +140,17 @@ func SubscriberSpecForRoute(name string) *v1alpha1.SubscriberSpec {
 	}
 }
 
+// SubscriberSpecForService returns a SubscriberSpec for a given Knative Service.
+func SubscriberSpecForService(name string) *v1alpha1.SubscriberSpec {
+	return &v1alpha1.SubscriberSpec{
+		Ref: &corev1.ObjectReference{
+			Kind:       "Service",
+			APIVersion: "v1",
+			Name:       name,
+		},
+	}
+}
+
 // Subscription returns a Subscription
 func Subscription(name string, namespace string, channel *corev1.ObjectReference, subscriber *v1alpha1.SubscriberSpec, reply *v1alpha1.ReplyStrategy) *v1alpha1.Subscription {
 	return &v1alpha1.Subscription{
@@ -164,7 +176,7 @@ type CloudEvent struct {
 }
 
 // EventSenderPod creates a Pod that sends a single event to the given address.
-func EventSenderPod(name string, namespace string, address string, event CloudEvent) *corev1.Pod {
+func EventSenderPod(name string, namespace string, sink string, event CloudEvent) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
@@ -173,8 +185,9 @@ func EventSenderPod(name string, namespace string, address string, event CloudEv
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{
-				Name:  "sendevent",
-				Image: ImagePath("sendevent"),
+				Name:            "sendevent",
+				Image:           ImagePath("sendevent"),
+				ImagePullPolicy: corev1.PullAlways, // TODO: this might not be wanted for local.
 				Args: []string{
 					"-event-id",
 					event.ID,
@@ -184,7 +197,8 @@ func EventSenderPod(name string, namespace string, address string, event CloudEv
 					event.Source,
 					"-data",
 					event.Data,
-					address,
+					"-sink",
+					sink,
 				},
 			}},
 			//TODO restart on failure?
@@ -204,8 +218,9 @@ func EventLoggerPod(name string, namespace string, selector map[string]string) *
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{
-				Name:  "logevents",
-				Image: ImagePath("logevents"),
+				Name:            "logevents",
+				Image:           ImagePath("logevents"),
+				ImagePullPolicy: corev1.PullAlways, // TODO: this might not be wanted for local.
 			}},
 			RestartPolicy: corev1.RestartPolicyAlways,
 		},
@@ -223,9 +238,10 @@ func Service(name string, namespace string, selector map[string]string) *corev1.
 		Spec: corev1.ServiceSpec{
 			Selector: selector,
 			Ports: []corev1.ServicePort{{
-				Name:     "http",
-				Port:     80,
-				Protocol: corev1.ProtocolTCP,
+				Name:       "http",
+				Port:       80,
+				Protocol:   corev1.ProtocolTCP,
+				TargetPort: intstr.FromInt(8080),
 			}},
 		},
 	}

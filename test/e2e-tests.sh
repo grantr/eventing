@@ -71,7 +71,7 @@ if (( ! USING_EXISTING_CLUSTER )); then
 fi
 
 # Clean up anything that might still be around
-#teardown_events_test_resources || fail_test "Error cleaning up test resources"
+teardown_events_test_resources || fail_test "Error cleaning up test resources"
 
 ko apply -f config/
 wait_until_pods_running knative-eventing || fail_test "Eventing did not come up (1)"

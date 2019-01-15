@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Knative Authors
+Copyright 2019 The Knative Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,89 +14,119 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Implements a simple utility for sending a JSON-encoded sample event.
 package main
 
 import (
-	"encoding/json"
 	"flag"
-	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
-	"os"
+	"strconv"
 	"time"
 
-	"github.com/knative/pkg/cloudevents"
-
 	"github.com/google/uuid"
+	"github.com/knative/pkg/cloudevents"
 )
 
+type Heartbeat struct {
+	Sequence int    `json:"id"`
+	Data     string `json:"data"`
+}
+
 var (
-	context cloudevents.EventContext
-	webhook string
-	data    string
+	sink      string
+	data      string
+	eventID   string
+	eventType string
+	source    string
+	periodStr string
+	delayStr  string
 )
 
 func init() {
-	flag.StringVar(&context.EventID, "event-id", "", "Event ID to use. Defaults to a generated UUID")
-	flag.StringVar(&context.EventType, "event-type", "google.events.action.demo", "The Event Type to use.")
-	flag.StringVar(&context.Source, "source", "", "Source URI to use. Defaults to the current machine's hostname")
-	flag.StringVar(&data, "data", `{"hello": "world!"}`, "Event data")
+	flag.StringVar(&sink, "sink", "", "The sink url for the message destination.")
+	flag.StringVar(&data, "data", "", "Special data.")
+	flag.StringVar(&eventID, "event-id", "", "Event ID to use. Defaults to a generated UUID")
+	flag.StringVar(&eventType, "event-type", "knative.eventing.test.e2e", "The Event Type to use.")
+	flag.StringVar(&source, "source", "", "Source URI to use. Defaults to the current machine's hostname")
+	flag.StringVar(&periodStr, "period", "5", "The number of seconds between messages.")
+	flag.StringVar(&delayStr, "delay", "5", "The number of seconds to wait before sending messages.")
+}
+
+func parseDurationStr(durationStr string, defaultDuration int) time.Duration {
+	var duration time.Duration
+	if d, err := strconv.Atoi(durationStr); err != nil {
+		duration = time.Duration(defaultDuration) * time.Second
+	} else {
+		duration = time.Duration(d) * time.Second
+	}
+	return duration
 }
 
 func main() {
 	flag.Parse()
+	period := parseDurationStr(periodStr, 5)
+	delay := parseDurationStr(delayStr, 5)
 
-	if len(flag.Args()) != 1 {
-		fmt.Println("Usage: sendevent [flags] <webhook>\nFor details about valid flags, run sendevent --help")
-		os.Exit(1)
+	if delay > 0 {
+		log.Printf("will sleep for %s", delay)
+		time.Sleep(delay)
+		log.Printf("awake, contining")
 	}
 
-	fmt.Println("Sleeping for 5 seconds")
-	//TODO maybe required for istio warmup?
-	time.Sleep(5 * time.Second)
-	fmt.Println("Done sleeping")
-
-	webhook := flag.Arg(0)
-
-	var untyped map[string]interface{}
-	if err := json.Unmarshal([]byte(data), &untyped); err != nil {
-		fmt.Println("Currently sendevent only supports JSON event data")
-		os.Exit(1)
+	if eventID == "" {
+		eventID = uuid.New().String()
 	}
 
-	fillEventContext(&context)
-	req, err := cloudevents.NewRequest(webhook, untyped, context)
-	if err != nil {
-		fmt.Printf("Failed to create request: %s", err)
-		os.Exit(1)
+	if source == "" {
+		source = "localhost"
 	}
-	fmt.Printf("requesting: %#v", req)
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		fmt.Printf("Failed to send event to %s: %s\n", webhook, err)
-		os.Exit(1)
+
+	hb := &Heartbeat{
+		Sequence: 0,
+		Data:     data,
 	}
-	fmt.Printf("Got response from %s\n%s\n", webhook, res.Status)
-	if res.Header.Get("Content-Length") != "" {
-		bytes, _ := ioutil.ReadAll(res.Body)
-		fmt.Println(string(bytes))
+	ticker := time.NewTicker(period)
+	for {
+		hb.Sequence++
+		postMessage(sink, hb)
+		// Wait for next tick
+		<-ticker.C
 	}
 }
 
-func fillEventContext(ctx *cloudevents.EventContext) {
-	ctx.CloudEventsVersion = "0.1"
-	ctx.EventTime = time.Now().UTC()
+// Creates a CloudEvent Context for a given heartbeat.
+func cloudEventsContext() *cloudevents.EventContext {
+	return &cloudevents.EventContext{
+		CloudEventsVersion: cloudevents.CloudEventsVersion,
+		EventType:          eventType,
+		EventID:            eventID,
+		Source:             source,
+		EventTime:          time.Now(),
+	}
+}
 
-	if ctx.EventID == "" {
-		ctx.EventID = uuid.New().String()
+func postMessage(target string, hb *Heartbeat) error {
+	ctx := cloudEventsContext()
+
+	log.Printf("posting to %q, %d", target, hb.Sequence)
+	// Explicitly using Binary encoding so that Istio, et. al. can better inspect
+	// event metadata.
+	req, err := cloudevents.Binary.NewRequest(target, hb, *ctx)
+	if err != nil {
+		log.Printf("failed to create http request: %s", err)
+		return err
 	}
 
-	if ctx.Source == "" {
-		var err error
-		ctx.Source, err = os.Hostname()
-		if err != nil {
-			ctx.Source = "localhost"
-		}
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("failed to do POST: %v", err)
+		return err
 	}
+	defer resp.Body.Close()
+	log.Printf("response Status: %s", resp.Status)
+	body, _ := ioutil.ReadAll(resp.Body)
+	log.Printf("response Body: %s", string(body))
+	return nil
 }

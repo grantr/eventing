@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	defaultTestNamespace = "e2etest-knative-eventing"
+	DefaultTestNamespace = "e2etest-knative-eventing"
 
 	interval = 1 * time.Second
 	timeout  = 1 * time.Minute
@@ -47,7 +47,7 @@ const (
 // Setup creates the client objects needed in the e2e tests.
 func Setup(t *testing.T, logger *logging.BaseLogger) (*test.Clients, *test.Cleaner) {
 	if pkgTest.Flags.Namespace == "" {
-		pkgTest.Flags.Namespace = defaultTestNamespace
+		pkgTest.Flags.Namespace = DefaultTestNamespace
 	}
 
 	clients, err := test.NewClients(
@@ -252,7 +252,12 @@ func PodLogs(clients *test.Clients, podName string, containerName string, namesp
 			result := pods.GetLogs(pod.Name, &corev1.PodLogOptions{
 				Container: containerName,
 			}).Do()
-			logger.Infof("logs request result: %#v", result)
+			raw, err := result.Raw()
+			if err == nil {
+				logger.Infof("%s logs request result: %#v", podName, string(raw))
+			} else {
+				logger.Infof("%s logs request result: %#v", podName, err)
+			}
 			return result.Raw()
 		}
 	}
