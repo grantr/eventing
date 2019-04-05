@@ -65,7 +65,12 @@ type TriggerSpec struct {
 }
 
 type TriggerFilter struct {
+	// SourceAndType filters events based on exact matches on the type and source
+	// attributes.
 	SourceAndType *TriggerFilterSourceAndType `json:"sourceAndType,omitempty"`
+	// CELExpression filters events by evaluating the expression with the CEL
+	// runtime.
+	CELExpression *string `json:"celExpression,omitempty"`
 }
 
 // TriggerFilterSourceAndType filters events based on exact matches on the cloud event's type and

@@ -552,6 +552,11 @@ func (in *TriggerFilter) DeepCopyInto(out *TriggerFilter) {
 		*out = new(TriggerFilterSourceAndType)
 		**out = **in
 	}
+	if in.CELExpression != nil {
+		in, out := &in.CELExpression, &out.CELExpression
+		*out = new(string)
+		**out = **in
+	}
 	return
 }
 
