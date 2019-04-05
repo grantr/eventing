@@ -212,11 +212,28 @@ func (r *Receiver) getTrigger(ctx context.Context, ref provisioners.ChannelRefer
 
 // shouldSendMessage determines whether message 'm' should be sent based on the triggerSpec 'ts'.
 // Currently it supports exact matching on type and/or source of events.
+// TODO this should allow returning error so the errors can be surfaced to the
+// trigger
 func (r *Receiver) shouldSendMessage(ts *eventingv1alpha1.TriggerSpec, event *cloudevents.Event) bool {
-	if ts.Filter == nil || ts.Filter.SourceAndType == nil {
+	if ts.Filter == nil {
 		r.logger.Error("No filter specified")
 		return false
 	}
+
+	// TODO what should happen if multiple filter types are specified? OR? AND?
+	// precedence rules?
+	if ts.Filter.CELExpression != nil {
+		return filterEventByCEL(ts, event)
+	}
+
+	if ts.Filter.SourceAndType != nil {
+		return r.filterEventBySourceAndType(ts, event)
+	}
+	// TODO is this supposed to be default true?
+	return true
+}
+
+func (r *Receiver) filterEventBySourceAndType(ts *eventingv1alpha1.TriggerSpec, event *cloudevents.Event) bool {
 	filterType := ts.Filter.SourceAndType.Type
 	if filterType != eventingv1alpha1.TriggerAnyFilter && filterType != event.Type() {
 		r.logger.Debug("Wrong type", zap.String("trigger.spec.filter.sourceAndType.type", filterType), zap.String("event.Type()", event.Type()))
