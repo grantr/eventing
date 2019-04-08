@@ -3,7 +3,6 @@ package broker
 import (
 	"bytes"
 	"encoding/json"
-	"log"
 
 	"github.com/cloudevents/sdk-go/pkg/cloudevents"
 	"github.com/golang/protobuf/jsonpb"
@@ -26,7 +25,7 @@ func filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *cloudevents.Event
 		return false
 	}
 
-	p, iss := e.Parse(ts.Filter.CEL.Expr)
+	p, iss := e.Parse(ts.Filter.CEL.Expression)
 	if iss != nil && iss.Err() != nil {
 		//TODO do something with error
 		return false
@@ -43,40 +42,91 @@ func filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *cloudevents.Event
 		return false
 	}
 
-	eventContextStruct := &structpb.Struct{}
-	eventContextJSON, err := json.Marshal(event.Context.AsV02())
-	if err != nil {
-		//TODO do something with error
-		return false
-	}
-	if err := jsonpb.Unmarshal(bytes.NewBuffer(eventContextJSON), eventContextStruct); err != nil {
-		log.Fatalf("json parse error: %s\n", err)
-	}
+	vars := map[string]interface{}{}
 
-	eventDataStruct := &structpb.Struct{}
-	// TODO should use of dynamic data be configurable by a flag?
-	// CloudEvents SDK might have a better way to do this with data codecs
-	if event.Context.AsV02().GetDataContentType() == "application/json" {
-		eventDataJSON, err := json.Marshal(event.Data)
-		if err != nil {
-			//TODO do something with error
-			//TODO should this return? Only the data failed to parse, not the context,
-			// and the user might just be filtering on context
-		} else {
-			if err := jsonpb.Unmarshal(bytes.NewBuffer(eventDataJSON), eventDataStruct); err != nil {
-				log.Fatalf("json parse error: %s\n", err)
+	// Create a Struct containing all the known CloudEvents fields. This is the
+	// filtering baseline.
+	// TODO refactor this so the extra struct isn't allocated if it isn't used
+	vars["ce"] = ceContextToStruct(event.Context)
+
+	if ts.Filter.CEL.ParseExtensions {
+		func() {
+			eventContextStruct := &structpb.Struct{}
+			eventContextJSON, err := json.Marshal(event.Context.AsV02())
+			if err != nil {
+				//TODO do something with error
+				return
 			}
-		}
+			if err := jsonpb.Unmarshal(bytes.NewBuffer(eventContextJSON), eventContextStruct); err != nil {
+				//TODO do something with error
+				return
+			}
+			// If we get here, replace the static context with the dynamic one
+			vars["ce"] = eventContextStruct
+		}()
 	}
 
-	out, _, err := prg.Eval(map[string]interface{}{
-		"ce":   eventContextStruct,
-		"data": eventDataStruct,
-	})
+	if ts.Filter.CEL.ParseData {
+		func() {
+			eventDataStruct := &structpb.Struct{}
+			// CloudEvents SDK might have a better way to do this with data codecs
+			if event.Context.AsV02().GetDataContentType() == "application/json" {
+				eventDataJSON, err := json.Marshal(event.Data)
+				if err != nil {
+					//TODO do something with error
+					return
+				}
+				if err := jsonpb.Unmarshal(bytes.NewBuffer(eventDataJSON), eventDataStruct); err != nil {
+					//TODO do something with error
+					return
+				}
+			}
+			vars["data"] = eventDataStruct
+		}()
+	}
+
+	out, _, err := prg.Eval(vars)
 	if err != nil {
 		//TODO do something with error
 		return false
 	}
 
 	return out == types.True
+}
+
+func ceContextToStruct(eventCtx cloudevents.EventContext) *structpb.Struct {
+	return &structpb.Struct{
+		Fields: map[string]*structpb.Value{
+			"specversion": &structpb.Value{
+				Kind: &structpb.Value_StringValue{
+					StringValue: eventCtx.GetSpecVersion(),
+				},
+			},
+			"type": &structpb.Value{
+				Kind: &structpb.Value_StringValue{
+					StringValue: eventCtx.GetType(),
+				},
+			},
+			"source": &structpb.Value{
+				Kind: &structpb.Value_StringValue{
+					StringValue: eventCtx.GetSource(),
+				},
+			},
+			"schemaurl": &structpb.Value{
+				Kind: &structpb.Value_StringValue{
+					StringValue: eventCtx.GetSchemaURL(),
+				},
+			},
+			"datamediatype": &structpb.Value{
+				Kind: &structpb.Value_StringValue{
+					StringValue: eventCtx.GetDataMediaType(),
+				},
+			},
+			"datacontenttype": &structpb.Value{
+				Kind: &structpb.Value_StringValue{
+					StringValue: eventCtx.GetDataContentType(),
+				},
+			},
+		},
+	}
 }

@@ -75,8 +75,6 @@ type TriggerFilter struct {
 	//
 	// +optional
 	CEL *TriggerFilterCEL `json:"cel,omitempty"`
-	// Alternate:
-	// Expression *TriggerFilterExpression{Lang, Expr}
 }
 
 // TriggerFilterSourceAndType filters events based on exact matches on the cloud event's type and
@@ -91,7 +89,20 @@ type TriggerFilterSourceAndType struct {
 // Expression Language runtime. An event passes the filter if the expression
 // evaluates to true.
 type TriggerFilterCEL struct {
+	// Expression is the CEL expression to evaluate. Required.
 	Expression string `json:"expression,omitempty"`
+	// ParseExtensions enables parsing of dynamic extensions attached to the event
+	// and makes the extensions available in the CEL environment. If extensions
+	// cannot be parsed they will be ignored. Defaults to false.
+	//
+	// +optional
+	ParseExtensions bool `json:"parseExtensions"`
+	// ParseData enables parsing of the event data and makes the parsed data
+	// available in the CEL environment. Currently this is only available for
+	// JSON data. Defaults to false.
+	//
+	// +optional
+	ParseData bool `json:"parseData"`
 }
 
 var triggerCondSet = duckv1alpha1.NewLivingConditionSet(TriggerConditionBrokerExists, TriggerConditionKubernetesService, TriggerConditionVirtualService, TriggerConditionSubscribed)
