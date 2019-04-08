@@ -18,6 +18,7 @@ func filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *cloudevents.Event
 	e, err := cel.NewEnv(
 		cel.Declarations(
 			decls.NewIdent("ce", decls.NewObjectType("google.protobuf.Struct"), nil),
+			decls.NewIdent("data", decls.NewObjectType("google.protobuf.Struct"), nil),
 		),
 	)
 	if err != nil {
@@ -42,18 +43,35 @@ func filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *cloudevents.Event
 		return false
 	}
 
-	cloudEvent := &structpb.Struct{}
-	eventJSON, err := json.Marshal(event.Context.AsV02())
+	eventContextStruct := &structpb.Struct{}
+	eventContextJSON, err := json.Marshal(event.Context.AsV02())
 	if err != nil {
 		//TODO do something with error
 		return false
 	}
-	if err := jsonpb.Unmarshal(bytes.NewBuffer(eventJSON), cloudEvent); err != nil {
+	if err := jsonpb.Unmarshal(bytes.NewBuffer(eventContextJSON), eventContextStruct); err != nil {
 		log.Fatalf("json parse error: %s\n", err)
 	}
 
+	eventDataStruct := &structpb.Struct{}
+	// TODO should use of dynamic data be configurable by a flag?
+	// CloudEvents SDK might have a better way to do this with data codecs
+	if event.Context.AsV02().GetDataContentType() == "application/json" {
+		eventDataJSON, err := json.Marshal(event.Data)
+		if err != nil {
+			//TODO do something with error
+			//TODO should this return? Only the data failed to parse, not the context,
+			// and the user might just be filtering on context
+		} else {
+			if err := jsonpb.Unmarshal(bytes.NewBuffer(eventDataJSON), eventDataStruct); err != nil {
+				log.Fatalf("json parse error: %s\n", err)
+			}
+		}
+	}
+
 	out, _, err := prg.Eval(map[string]interface{}{
-		"ce": cloudEvent,
+		"ce":   eventContextStruct,
+		"data": eventDataStruct,
 	})
 	if err != nil {
 		//TODO do something with error
