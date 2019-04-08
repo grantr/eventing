@@ -67,10 +67,16 @@ type TriggerSpec struct {
 type TriggerFilter struct {
 	// SourceAndType filters events based on exact matches on the type and source
 	// attributes.
+	//
+	// +optional
 	SourceAndType *TriggerFilterSourceAndType `json:"sourceAndType,omitempty"`
-	// CELExpression filters events by evaluating the expression with the CEL
-	// runtime.
-	CELExpression *string `json:"celExpression,omitempty"`
+	// CEL filters events by evaluating the expression with the Common
+	// Expression Language runtime.
+	//
+	// +optional
+	CEL *TriggerFilterCEL `json:"cel,omitempty"`
+	// Alternate:
+	// Expression *TriggerFilterExpression{Lang, Expr}
 }
 
 // TriggerFilterSourceAndType filters events based on exact matches on the cloud event's type and
@@ -79,6 +85,13 @@ type TriggerFilter struct {
 type TriggerFilterSourceAndType struct {
 	Type   string `json:"type,omitempty"`
 	Source string `json:"source,omitempty"`
+}
+
+// TriggerFilterCEL filters events by evaluating the expression with the Common
+// Expression Language runtime. An event passes the filter if the expression
+// evaluates to true.
+type TriggerFilterCEL struct {
+	Expression string `json:"expression,omitempty"`
 }
 
 var triggerCondSet = duckv1alpha1.NewLivingConditionSet(TriggerConditionBrokerExists, TriggerConditionKubernetesService, TriggerConditionVirtualService, TriggerConditionSubscribed)
