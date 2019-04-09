@@ -223,7 +223,11 @@ func (r *Receiver) shouldSendMessage(ts *eventingv1alpha1.TriggerSpec, event *cl
 	// TODO what should happen if multiple filter types are specified? OR? AND?
 	// precedence rules?
 	if ts.Filter.CEL != nil {
-		return filterEventByCEL(ts, event)
+		pass, err := r.filterEventByCEL(ts, event)
+		if err != nil {
+			r.logger.Error("CEL filtering failure", zap.Error(err))
+		}
+		return pass
 	}
 
 	if ts.Filter.SourceAndType != nil {

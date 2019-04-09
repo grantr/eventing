@@ -11,90 +11,96 @@ import (
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types"
 	eventingv1alpha1 "github.com/knative/eventing/pkg/apis/eventing/v1alpha1"
+	"go.uber.org/zap"
 )
 
-func filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *cloudevents.Event) bool {
+const (
+	// CELVarKeyContext is the CEL variable key used for the CloudEvent event
+	// context.
+	CELVarKeyContext = "ce"
+	// CELVarKeyData is the CEL variable key used for the CloudEvent event data.
+	CELVarKeyData = "data"
+)
+
+func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *cloudevents.Event) (bool, error) {
 	e, err := cel.NewEnv(
 		cel.Declarations(
-			decls.NewIdent("ce", decls.NewObjectType("google.protobuf.Struct"), nil),
-			decls.NewIdent("data", decls.NewObjectType("google.protobuf.Struct"), nil),
+			decls.NewIdent(CELVarKeyContext, decls.NewObjectType("google.protobuf.Struct"), nil),
+			decls.NewIdent(CELVarKeyData, decls.NewObjectType("google.protobuf.Struct"), nil),
 		),
 	)
 	if err != nil {
-		//TODO do something with error
-		return false
+		return false, err
 	}
 
 	p, iss := e.Parse(ts.Filter.CEL.Expression)
 	if iss != nil && iss.Err() != nil {
-		//TODO do something with error
-		return false
+		return false, iss.Err()
 	}
 	c, iss := e.Check(p)
 	if iss != nil && iss.Err() != nil {
-		//TODO do something with error
-		return false
+		return false, iss.Err()
 	}
 
+	//TODO cache these by hash of expression. Programs are thread-safe so it's
+	// ok to share them between triggers and events.
 	prg, err := e.Program(c)
 	if err != nil {
-		//TODO do something with error
-		return false
+		return false, err
 	}
 
 	vars := map[string]interface{}{}
-
-	// Create a Struct containing all the known CloudEvents fields. This is the
-	// filtering baseline.
-	// TODO refactor this so the extra struct isn't allocated if it isn't used
-	vars["ce"] = ceContextToStruct(event.Context)
-
+	// If the Trigger has requested parsing of extensions, attempt to turn them
+	// into a dynamic struct.
 	if ts.Filter.CEL.ParseExtensions {
-		func() {
-			eventContextStruct := &structpb.Struct{}
-			eventContextJSON, err := json.Marshal(event.Context.AsV02())
-			if err != nil {
-				//TODO do something with error
-				return
-			}
-			if err := jsonpb.Unmarshal(bytes.NewBuffer(eventContextJSON), eventContextStruct); err != nil {
-				//TODO do something with error
-				return
-			}
-			// If we get here, replace the static context with the dynamic one
-			vars["ce"] = eventContextStruct
-		}()
+		ctxStruct, err := ceParsedContextStruct(event.Context)
+		if err != nil {
+			r.logger.Error("Failed to parse event context for CEL filtering", zap.String("id", event.Context.AsV02().ID), zap.Error(err))
+		} else {
+			vars[CELVarKeyContext] = ctxStruct
+		}
 	}
 
+	// If the context var wasn't set due to trigger config or a failure to parse
+	// extensions, create a struct with the known CE fields as a filtering
+	// baseline.
+	if _, exists := vars[CELVarKeyContext]; !exists {
+		vars[CELVarKeyContext] = ceBaselineContextStruct(event.Context)
+	}
+
+	// If the Trigger has requested parsing of data, attempt to turn them into
+	// a dynamic struct.
 	if ts.Filter.CEL.ParseData {
-		func() {
-			eventDataStruct := &structpb.Struct{}
-			// CloudEvents SDK might have a better way to do this with data codecs
-			if event.Context.AsV02().GetDataContentType() == "application/json" {
-				eventDataJSON, err := json.Marshal(event.Data)
-				if err != nil {
-					//TODO do something with error
-					return
-				}
-				if err := jsonpb.Unmarshal(bytes.NewBuffer(eventDataJSON), eventDataStruct); err != nil {
-					//TODO do something with error
-					return
-				}
-			}
-			vars["data"] = eventDataStruct
-		}()
+		dataStruct, err := ceParsedDataStruct(event)
+		if err != nil {
+			r.logger.Error("Failed to parse event data for CEL filtering", zap.String("id", event.Context.AsV02().ID), zap.Error(err))
+		} else {
+			vars[CELVarKeyData] = dataStruct
+		}
 	}
 
 	out, _, err := prg.Eval(vars)
 	if err != nil {
-		//TODO do something with error
-		return false
+		return false, err
 	}
 
-	return out == types.True
+	return out == types.True, nil
 }
 
-func ceContextToStruct(eventCtx cloudevents.EventContext) *structpb.Struct {
+func ceParsedContextStruct(eventCtx cloudevents.EventContext) (*structpb.Struct, error) {
+	ctxStruct := &structpb.Struct{}
+	//TODO should this coerce to V02?
+	ctxJSON, err := json.Marshal(eventCtx.AsV02())
+	if err != nil {
+		return nil, err
+	}
+	if err := jsonpb.Unmarshal(bytes.NewBuffer(ctxJSON), ctxStruct); err != nil {
+		return nil, err
+	}
+	return ctxStruct, nil
+}
+
+func ceBaselineContextStruct(eventCtx cloudevents.EventContext) *structpb.Struct {
 	return &structpb.Struct{
 		Fields: map[string]*structpb.Value{
 			"specversion": &structpb.Value{
@@ -129,4 +135,20 @@ func ceContextToStruct(eventCtx cloudevents.EventContext) *structpb.Struct {
 			},
 		},
 	}
+}
+
+func ceParsedDataStruct(event *cloudevents.Event) (*structpb.Struct, error) {
+	//TODO CloudEvents SDK might have a better way to do this with data codecs
+	if event.Context.GetDataContentType() == "application/json" {
+		dataStruct := &structpb.Struct{}
+		dataJSON, err := json.Marshal(event.Data)
+		if err != nil {
+			return nil, err
+		}
+		if err := jsonpb.Unmarshal(bytes.NewBuffer(dataJSON), dataStruct); err != nil {
+			return nil, err
+		}
+		return dataStruct, nil
+	}
+	return nil, nil
 }
