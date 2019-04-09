@@ -61,12 +61,12 @@ func init() {
 
 func TestReceiver(t *testing.T) {
 	testCases := map[string]struct {
-		triggers         []*eventingv1alpha1.Trigger
+		triggers         []*TriggerBuilder
 		mocks            controllertesting.Mocks
 		tctx             *cehttp.TransportContext
-		event            *cloudevents.Event
+		event            *EventBuilder
 		requestFails     bool
-		returnedEvent    *cloudevents.Event
+		returnedEvent    *EventBuilder
 		expectNewToFail  bool
 		expectedErr      bool
 		expectedDispatch bool
@@ -112,68 +112,68 @@ func TestReceiver(t *testing.T) {
 			expectedErr: true,
 		},
 		"Trigger doesn't have SubscriberURI": {
-			triggers: []*eventingv1alpha1.Trigger{
-				makeTriggerWithoutSubscriberURI(),
+			triggers: []*TriggerBuilder{
+				Trigger(),
 			},
 			expectedErr: true,
 		},
 		"Trigger with bad SubscriberURI": {
-			triggers: []*eventingv1alpha1.Trigger{
-				makeTriggerWithBadSubscriberURI(),
+			triggers: []*TriggerBuilder{
+				Trigger().BadSubscriberURI(),
 			},
 			expectedErr: true,
 		},
 		"Trigger without a Filter": {
-			triggers: []*eventingv1alpha1.Trigger{
-				makeTriggerWithoutFilter(),
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI(),
 			},
 		},
 		"No TTL": {
-			triggers: []*eventingv1alpha1.Trigger{
-				makeTrigger("", ""),
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterSourceAndType("", ""),
 			},
-			event: makeEventWithoutTTL(),
+			event: Event(),
 		},
 		"Wrong type": {
-			triggers: []*eventingv1alpha1.Trigger{
-				makeTrigger("some-other-type", ""),
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterSourceAndType("some-other-type", ""),
 			},
 		},
 		"Wrong source": {
-			triggers: []*eventingv1alpha1.Trigger{
-				makeTrigger("", "some-other-source"),
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterSourceAndType("", "some-other-source"),
 			},
 		},
 		"Dispatch failed": {
-			triggers: []*eventingv1alpha1.Trigger{
-				makeTrigger("", ""),
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterSourceAndType("", ""),
 			},
 			requestFails:     true,
 			expectedErr:      true,
 			expectedDispatch: true,
 		},
 		"Dispatch succeeded - Any": {
-			triggers: []*eventingv1alpha1.Trigger{
-				makeTrigger("", ""),
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterSourceAndType("", ""),
 			},
 			expectedDispatch: true,
 		},
 		"Dispatch succeeded - Specific": {
-			triggers: []*eventingv1alpha1.Trigger{
-				makeTrigger(eventType, eventSource),
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterSourceAndType(eventType, eventSource),
 			},
 			expectedDispatch: true,
 		},
 		"Returned Cloud Event": {
-			triggers: []*eventingv1alpha1.Trigger{
-				makeTrigger("", ""),
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterSourceAndType("", ""),
 			},
 			expectedDispatch: true,
-			returnedEvent:    makeDifferentEvent(),
+			returnedEvent:    Event().Type("some-other-type"),
 		},
 		"Returned Cloud Event with custom headers": {
-			triggers: []*eventingv1alpha1.Trigger{
-				makeTrigger("", ""),
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterSourceAndType("", ""),
 			},
 			tctx: &cehttp.TransportContext{
 				Method: "POST",
@@ -207,12 +207,11 @@ func TestReceiver(t *testing.T) {
 				"X-Ot-Foo": []string{"haden"},
 			},
 			expectedDispatch: true,
-			returnedEvent:    makeDifferentEvent(),
+			returnedEvent:    Event().Type("some-other-type"),
 		},
 	}
 	for n, tc := range testCases {
 		t.Run(n, func(t *testing.T) {
-
 			fh := fakeHandler{
 				failRequest:   tc.requestFails,
 				returnedEvent: tc.returnedEvent,
@@ -228,7 +227,7 @@ func TestReceiver(t *testing.T) {
 				if trig.Status.SubscriberURI == toBeReplaced {
 					trig.Status.SubscriberURI = s.URL
 				}
-				correctURI = append(correctURI, trig)
+				correctURI = append(correctURI, trig.Build())
 			}
 
 			r, err := New(
@@ -255,9 +254,9 @@ func TestReceiver(t *testing.T) {
 			resp := &cloudevents.EventResponse{}
 			event := tc.event
 			if event == nil {
-				event = makeEvent()
+				event = Event().TTL()
 			}
-			err = r.serveHTTP(ctx, *event, resp)
+			err = r.serveHTTP(ctx, *event.Build(), resp)
 
 			if tc.expectedErr && err == nil {
 				t.Errorf("Expected an error, received nil")
@@ -283,7 +282,7 @@ func TestReceiver(t *testing.T) {
 			}
 
 			// The TTL will be added again.
-			expectedResponseEvent := addTTLToEvent(*tc.returnedEvent)
+			expectedResponseEvent := *tc.returnedEvent.TTL().Build()
 			if diff := cmp.Diff(expectedResponseEvent.Context.AsV02(), resp.Event.Context.AsV02()); diff != "" {
 				t.Errorf("Incorrect response event context (-want +got): %s", diff)
 			}
@@ -298,7 +297,7 @@ type fakeHandler struct {
 	failRequest     bool
 	requestReceived bool
 	headers         http.Header
-	returnedEvent   *cloudevents.Event
+	returnedEvent   *EventBuilder
 	t               *testing.T
 }
 
@@ -324,7 +323,7 @@ func (h *fakeHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	}
 
 	c := &cehttp.CodecV02{}
-	m, err := c.Encode(*h.returnedEvent)
+	m, err := c.Encode(*h.returnedEvent.Build())
 	if err != nil {
 		h.t.Fatalf("Could not encode message: %v", err)
 	}
@@ -346,52 +345,65 @@ func getClient(initial []runtime.Object, mocks controllertesting.Mocks) *control
 	return controllertesting.NewMockClient(innerClient, mocks)
 }
 
-func makeTrigger(t, s string) *eventingv1alpha1.Trigger {
-	return &eventingv1alpha1.Trigger{
+type TriggerBuilder struct {
+	*eventingv1alpha1.Trigger
+}
+
+var _ controllertesting.Buildable = &TriggerBuilder{}
+
+func Trigger() *TriggerBuilder {
+	trigger := &eventingv1alpha1.Trigger{
 		TypeMeta: v1.TypeMeta{
-			APIVersion: "eventing.knative.dev/v1alpha1",
+			APIVersion: eventingv1alpha1.SchemeGroupVersion.String(),
 			Kind:       "Trigger",
 		},
 		ObjectMeta: v1.ObjectMeta{
 			Namespace: testNS,
 			Name:      triggerName,
 		},
-		Spec: eventingv1alpha1.TriggerSpec{
-			Filter: &eventingv1alpha1.TriggerFilter{
-				SourceAndType: &eventingv1alpha1.TriggerFilterSourceAndType{
-					Type:   t,
-					Source: s,
-				},
-			},
-		},
-		Status: eventingv1alpha1.TriggerStatus{
-			SubscriberURI: "toBeReplaced",
-		},
+	}
+	return &TriggerBuilder{
+		Trigger: trigger,
 	}
 }
 
-func makeTriggerWithoutFilter() *eventingv1alpha1.Trigger {
-	t := makeTrigger("", "")
-	t.Spec.Filter = nil
-	return t
+func (b *TriggerBuilder) Build() runtime.Object {
+	return b.Trigger
 }
 
-func makeTriggerWithoutSubscriberURI() *eventingv1alpha1.Trigger {
-	t := makeTrigger("", "")
-	t.Status = eventingv1alpha1.TriggerStatus{}
-	return t
+func (b *TriggerBuilder) FilterSourceAndType(t, s string) *TriggerBuilder {
+	b.Spec.Filter = &eventingv1alpha1.TriggerFilter{
+		SourceAndType: &eventingv1alpha1.TriggerFilterSourceAndType{
+			Type:   t,
+			Source: s,
+		},
+	}
+	return b
 }
 
-func makeTriggerWithBadSubscriberURI() *eventingv1alpha1.Trigger {
-	t := makeTrigger("", "")
-	// This should fail url.Parse(). It was taken from the unit tests for url.Parse(), it violates
-	// rfc3986 3.2.3, namely that the port must be digits.
-	t.Status.SubscriberURI = "http://[::1]:namedport"
-	return t
+func (b *TriggerBuilder) SubscriberURI() *TriggerBuilder {
+	b.Status = eventingv1alpha1.TriggerStatus{
+		SubscriberURI: toBeReplaced,
+	}
+	return b
 }
 
-func makeEventWithoutTTL() *cloudevents.Event {
-	return &cloudevents.Event{
+func (b *TriggerBuilder) BadSubscriberURI() *TriggerBuilder {
+	// This should fail url.Parse(). It was taken from the unit tests for
+	// url.Parse(), it violates rfc3986 3.2.3, namely that the port must be
+	// digits.
+	b.Status = eventingv1alpha1.TriggerStatus{
+		SubscriberURI: "http://[::1]:namedport",
+	}
+	return b
+}
+
+type EventBuilder struct {
+	*cloudevents.Event
+}
+
+func Event() *EventBuilder {
+	event := &cloudevents.Event{
 		Context: cloudevents.EventContextV02{
 			Type: eventType,
 			Source: types.URLRef{
@@ -402,29 +414,30 @@ func makeEventWithoutTTL() *cloudevents.Event {
 			ContentType: cloudevents.StringOfApplicationJSON(),
 		},
 	}
-}
-
-func makeEvent() *cloudevents.Event {
-	noTTL := makeEventWithoutTTL()
-	e := addTTLToEvent(*noTTL)
-	return &e
-}
-
-func addTTLToEvent(e cloudevents.Event) cloudevents.Event {
-	e.Context = SetTTL(e.Context, 1)
-	return e
-}
-
-func makeDifferentEvent() *cloudevents.Event {
-	return &cloudevents.Event{
-		Context: cloudevents.EventContextV02{
-			Type: "some-other-type",
-			Source: types.URLRef{
-				URL: url.URL{
-					Path: eventSource,
-				},
-			},
-			ContentType: cloudevents.StringOfApplicationJSON(),
-		},
+	return &EventBuilder{
+		Event: event,
 	}
+}
+
+func (b *EventBuilder) Build() *cloudevents.Event {
+	return b.Event
+}
+
+func (b *EventBuilder) TTL() *EventBuilder {
+	b.Context = SetTTL(b.Context, 1)
+	return b
+}
+
+func (b *EventBuilder) Type(t string) *EventBuilder {
+	ct := b.Context.GetDataContentType()
+	b.Context = cloudevents.EventContextV02{
+		Type: t,
+		Source: types.URLRef{
+			URL: url.URL{
+				Path: b.Context.GetSource(),
+			},
+		},
+		ContentType: &ct,
+	}
+	return b
 }
