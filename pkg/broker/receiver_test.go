@@ -166,12 +166,12 @@ func TestReceiver(t *testing.T) {
 		},
 		"CEL wrong type": {
 			triggers: []*TriggerBuilder{
-				Trigger().SubscriberURI().FilterCEL(`typ == "some-other-type"`),
+				Trigger().SubscriberURI().FilterCEL(`ce.type == "some-other-type"`),
 			},
 		},
 		"CEL wrong source": {
 			triggers: []*TriggerBuilder{
-				Trigger().SubscriberURI().FilterCEL(`source == "some-other-source"`),
+				Trigger().SubscriberURI().FilterCEL(`ce.source == "some-other-source"`),
 			},
 		},
 		"CEL wrong parsed extensions": {
@@ -194,7 +194,7 @@ func TestReceiver(t *testing.T) {
 		},
 		"Dispatch succeeded - CEL Specific": {
 			triggers: []*TriggerBuilder{
-				Trigger().SubscriberURI().FilterCEL(fmt.Sprintf(`typ == "%s" && source == "%s"`, eventType, eventSource)),
+				Trigger().SubscriberURI().FilterCEL(fmt.Sprintf(`ce.type == "%s" && ce.source == "%s"`, eventType, eventSource)),
 			},
 			expectedDispatch: true,
 		},

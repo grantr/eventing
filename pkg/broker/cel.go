@@ -11,28 +11,28 @@ import (
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types"
 	eventingv1alpha1 "github.com/knative/eventing/pkg/apis/eventing/v1alpha1"
+	celprotos "github.com/knative/eventing/pkg/broker/dev_knative"
 	"go.uber.org/zap"
 )
 
 const (
+	// CELVarKeyContext is the CEL variable key used for the CloudEvent event
+	// context fields defined in the spec.
+	CELVarKeyContext = "ce"
 	// CELVarKeyExtensions is the CEL variable key used for the CloudEvent event
 	// context extensions.
 	CELVarKeyExtensions = "ext"
 	// CELVarKeyData is the CEL variable key used for the CloudEvent event data.
 	CELVarKeyData = "data"
 	//TODO add a key that contains both the extensions and the baseline context
-	// so extensions can be future proofed
+	// vars so extensions can be future proofed.
 )
 
 func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *cloudevents.Event) (bool, error) {
 	e, err := cel.NewEnv(
+		cel.Types(&celprotos.CloudEventContext{}),
 		cel.Declarations(
-			decls.NewIdent("specversion", decls.String, nil),
-			decls.NewIdent("typ", decls.String, nil),
-			decls.NewIdent("source", decls.String, nil),
-			decls.NewIdent("schemaurl", decls.String, nil),
-			decls.NewIdent("datamediatype", decls.String, nil),
-			decls.NewIdent("datacontenttype", decls.String, nil),
+			decls.NewIdent(CELVarKeyContext, decls.NewObjectType("dev.knative.CloudEventContext"), nil),
 			decls.NewIdent(CELVarKeyExtensions, decls.NewObjectType("google.protobuf.Struct"), nil),
 			decls.NewIdent(CELVarKeyData, decls.NewObjectType("google.protobuf.Struct"), nil),
 		),
@@ -59,13 +59,15 @@ func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *clo
 
 	vars := map[string]interface{}{}
 	// Set baseline context fields
-	vars["specversion"] = event.Context.GetSpecVersion()
-	// TODO this doesn't work because `type` is reserved in CEL (it's a cast)
-	vars["typ"] = event.Context.GetType()
-	vars["source"] = event.Context.GetSource()
-	vars["schemaurl"] = event.Context.GetSchemaURL()
-	vars["datamediatype"] = event.Context.GetDataMediaType()
-	vars["datacontenttype"] = event.Context.GetDataContentType()
+	ceCtx := &celprotos.CloudEventContext{
+		Specversion:     event.Context.GetSpecVersion(),
+		Type:            event.Context.GetType(),
+		Source:          event.Context.GetSource(),
+		Schemaurl:       event.Context.GetSchemaURL(),
+		Datamediatype:   event.Context.GetDataMediaType(),
+		Datacontenttype: event.Context.GetDataContentType(),
+	}
+	vars[CELVarKeyContext] = ceCtx
 
 	// If the Trigger has requested parsing of extensions, attempt to turn them
 	// into a dynamic struct.

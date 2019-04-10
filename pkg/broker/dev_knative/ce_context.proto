@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package dev.knative;
+
+message CloudEventContext {
+  string specversion = 1;
+  string type = 2;
+  string source = 3;
+  string schemaurl = 4;
+  string datamediatype = 5;
+  string datacontenttype = 6;
+}
