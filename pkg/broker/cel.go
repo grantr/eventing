@@ -15,17 +15,25 @@ import (
 )
 
 const (
-	// CELVarKeyContext is the CEL variable key used for the CloudEvent event
-	// context.
-	CELVarKeyContext = "ce"
+	// CELVarKeyExtensions is the CEL variable key used for the CloudEvent event
+	// context extensions.
+	CELVarKeyExtensions = "ext"
 	// CELVarKeyData is the CEL variable key used for the CloudEvent event data.
 	CELVarKeyData = "data"
+	//TODO add a key that contains both the extensions and the baseline context
+	// so extensions can be future proofed
 )
 
 func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *cloudevents.Event) (bool, error) {
 	e, err := cel.NewEnv(
 		cel.Declarations(
-			decls.NewIdent(CELVarKeyContext, decls.NewObjectType("google.protobuf.Struct"), nil),
+			decls.NewIdent("specversion", decls.String, nil),
+			decls.NewIdent("typ", decls.String, nil),
+			decls.NewIdent("source", decls.String, nil),
+			decls.NewIdent("schemaurl", decls.String, nil),
+			decls.NewIdent("datamediatype", decls.String, nil),
+			decls.NewIdent("datacontenttype", decls.String, nil),
+			decls.NewIdent(CELVarKeyExtensions, decls.NewObjectType("google.protobuf.Struct"), nil),
 			decls.NewIdent(CELVarKeyData, decls.NewObjectType("google.protobuf.Struct"), nil),
 		),
 	)
@@ -50,22 +58,25 @@ func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *clo
 	}
 
 	vars := map[string]interface{}{}
+	// Set baseline context fields
+	vars["specversion"] = event.Context.GetSpecVersion()
+	// TODO this doesn't work because `type` is reserved in CEL (it's a cast)
+	vars["typ"] = event.Context.GetType()
+	vars["source"] = event.Context.GetSource()
+	vars["schemaurl"] = event.Context.GetSchemaURL()
+	vars["datamediatype"] = event.Context.GetDataMediaType()
+	vars["datacontenttype"] = event.Context.GetDataContentType()
+
 	// If the Trigger has requested parsing of extensions, attempt to turn them
 	// into a dynamic struct.
 	if ts.Filter.CEL.ParseExtensions {
-		ctxStruct, err := ceParsedContextStruct(event.Context)
+		//TODO should this coerce to V02?
+		extStruct, err := ceParsedExtensionsStruct(event.Context.AsV02().Extensions)
 		if err != nil {
 			r.logger.Error("Failed to parse event context for CEL filtering", zap.String("id", event.Context.AsV02().ID), zap.Error(err))
 		} else {
-			vars[CELVarKeyContext] = ctxStruct
+			vars[CELVarKeyExtensions] = extStruct
 		}
-	}
-
-	// If the context var wasn't set due to trigger config or a failure to parse
-	// extensions, create a struct with the known CE fields as a filtering
-	// baseline.
-	if _, exists := vars[CELVarKeyContext]; !exists {
-		vars[CELVarKeyContext] = ceBaselineContextStruct(event.Context)
 	}
 
 	// If the Trigger has requested parsing of data, attempt to turn them into
@@ -87,64 +98,34 @@ func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *clo
 	return out == types.True, nil
 }
 
-func ceParsedContextStruct(eventCtx cloudevents.EventContext) (*structpb.Struct, error) {
-	ctxStruct := &structpb.Struct{}
-	//TODO should this coerce to V02?
-	ctxJSON, err := json.Marshal(eventCtx.AsV02())
+func ceParsedExtensionsStruct(ext map[string]interface{}) (*structpb.Struct, error) {
+	extJSON, err := json.Marshal(ext)
 	if err != nil {
 		return nil, err
 	}
-	if err := jsonpb.Unmarshal(bytes.NewBuffer(ctxJSON), ctxStruct); err != nil {
+
+	extStruct := &structpb.Struct{}
+	if err := jsonpb.Unmarshal(bytes.NewBuffer(extJSON), extStruct); err != nil {
 		return nil, err
 	}
-	return ctxStruct, nil
-}
-
-func ceBaselineContextStruct(eventCtx cloudevents.EventContext) *structpb.Struct {
-	return &structpb.Struct{
-		Fields: map[string]*structpb.Value{
-			"specversion": &structpb.Value{
-				Kind: &structpb.Value_StringValue{
-					StringValue: eventCtx.GetSpecVersion(),
-				},
-			},
-			"type": &structpb.Value{
-				Kind: &structpb.Value_StringValue{
-					StringValue: eventCtx.GetType(),
-				},
-			},
-			"source": &structpb.Value{
-				Kind: &structpb.Value_StringValue{
-					StringValue: eventCtx.GetSource(),
-				},
-			},
-			"schemaurl": &structpb.Value{
-				Kind: &structpb.Value_StringValue{
-					StringValue: eventCtx.GetSchemaURL(),
-				},
-			},
-			"datamediatype": &structpb.Value{
-				Kind: &structpb.Value_StringValue{
-					StringValue: eventCtx.GetDataMediaType(),
-				},
-			},
-			"datacontenttype": &structpb.Value{
-				Kind: &structpb.Value_StringValue{
-					StringValue: eventCtx.GetDataContentType(),
-				},
-			},
-		},
-	}
+	return extStruct, nil
 }
 
 func ceParsedDataStruct(event *cloudevents.Event) (*structpb.Struct, error) {
 	//TODO CloudEvents SDK might have a better way to do this with data codecs
 	if event.Context.GetDataContentType() == "application/json" {
-		dataStruct := &structpb.Struct{}
-		dataJSON, err := json.Marshal(event.Data)
+		var decodedData map[string]interface{}
+		err := event.DataAs(&decodedData)
 		if err != nil {
 			return nil, err
 		}
+		dataJSON, err := json.Marshal(decodedData)
+		if err != nil {
+			return nil, err
+		}
+
+		dataStruct := &structpb.Struct{}
+		//TODO is there a way to convert a map into a structpb.Struct?
 		if err := jsonpb.Unmarshal(bytes.NewBuffer(dataJSON), dataStruct); err != nil {
 			return nil, err
 		}

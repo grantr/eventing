@@ -132,7 +132,7 @@ func TestReceiver(t *testing.T) {
 			triggers: []*TriggerBuilder{
 				Trigger().SubscriberURI().FilterSourceAndType("", ""),
 			},
-			event: Event(),
+			event: EventWithoutTTL(),
 		},
 		"Wrong type": {
 			triggers: []*TriggerBuilder{
@@ -152,16 +152,64 @@ func TestReceiver(t *testing.T) {
 			expectedErr:      true,
 			expectedDispatch: true,
 		},
-		"Dispatch succeeded - Any": {
+		"Dispatch succeeded - SourceAndType Any": {
 			triggers: []*TriggerBuilder{
 				Trigger().SubscriberURI().FilterSourceAndType("", ""),
 			},
 			expectedDispatch: true,
 		},
-		"Dispatch succeeded - Specific": {
+		"Dispatch succeeded - SourceAndType Specific": {
 			triggers: []*TriggerBuilder{
 				Trigger().SubscriberURI().FilterSourceAndType(eventType, eventSource),
 			},
+			expectedDispatch: true,
+		},
+		"CEL wrong type": {
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterCEL(`typ == "some-other-type"`),
+			},
+		},
+		"CEL wrong source": {
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterCEL(`source == "some-other-source"`),
+			},
+		},
+		"CEL wrong parsed extensions": {
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterCEL(`ext.foo == "baz"`).CELParseExtensions(),
+			},
+			event: Event().Extension("foo", "bar"),
+		},
+		"CEL wrong parsed data": {
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterCEL(`data.baz == "quz"`).CELParseData(),
+			},
+			event: Event().JSONData(`{"baz":"qux"}`),
+		},
+		"Dispatch succeeded - CEL Any": {
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterCEL("1 == 1"),
+			},
+			expectedDispatch: true,
+		},
+		"Dispatch succeeded - CEL Specific": {
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterCEL(fmt.Sprintf(`typ == "%s" && source == "%s"`, eventType, eventSource)),
+			},
+			expectedDispatch: true,
+		},
+		"Dispatch succeeded - CEL parsed extensions": {
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterCEL(`ext.foo == "bar"`).CELParseExtensions(),
+			},
+			event:            Event().Extension("foo", "bar"),
+			expectedDispatch: true,
+		},
+		"Dispatch succeeded - CEL parsed data": {
+			triggers: []*TriggerBuilder{
+				Trigger().SubscriberURI().FilterCEL(`data.baz == "qux"`).CELParseData(),
+			},
+			event:            Event().JSONData(`{"baz":"qux"}`),
 			expectedDispatch: true,
 		},
 		"Returned Cloud Event": {
@@ -254,7 +302,7 @@ func TestReceiver(t *testing.T) {
 			resp := &cloudevents.EventResponse{}
 			event := tc.event
 			if event == nil {
-				event = Event().TTL()
+				event = Event()
 			}
 			err = r.serveHTTP(ctx, *event.Build(), resp)
 
@@ -282,7 +330,7 @@ func TestReceiver(t *testing.T) {
 			}
 
 			// The TTL will be added again.
-			expectedResponseEvent := *tc.returnedEvent.TTL().Build()
+			expectedResponseEvent := *tc.returnedEvent.Build()
 			if diff := cmp.Diff(expectedResponseEvent.Context.AsV02(), resp.Event.Context.AsV02()); diff != "" {
 				t.Errorf("Incorrect response event context (-want +got): %s", diff)
 			}
@@ -381,6 +429,25 @@ func (b *TriggerBuilder) FilterSourceAndType(t, s string) *TriggerBuilder {
 	return b
 }
 
+func (b *TriggerBuilder) FilterCEL(expr string) *TriggerBuilder {
+	b.Spec.Filter = &eventingv1alpha1.TriggerFilter{
+		CEL: &eventingv1alpha1.TriggerFilterCEL{
+			Expression: expr,
+		},
+	}
+	return b
+}
+
+func (b *TriggerBuilder) CELParseExtensions() *TriggerBuilder {
+	b.Spec.Filter.CEL.ParseExtensions = true
+	return b
+}
+
+func (b *TriggerBuilder) CELParseData() *TriggerBuilder {
+	b.Spec.Filter.CEL.ParseData = true
+	return b
+}
+
 func (b *TriggerBuilder) SubscriberURI() *TriggerBuilder {
 	b.Status = eventingv1alpha1.TriggerStatus{
 		SubscriberURI: toBeReplaced,
@@ -402,7 +469,11 @@ type EventBuilder struct {
 	*cloudevents.Event
 }
 
-func Event() *EventBuilder {
+func (b *EventBuilder) Build() *cloudevents.Event {
+	return b.Event
+}
+
+func EventWithoutTTL() *EventBuilder {
 	event := &cloudevents.Event{
 		Context: cloudevents.EventContextV02{
 			Type: eventType,
@@ -419,8 +490,8 @@ func Event() *EventBuilder {
 	}
 }
 
-func (b *EventBuilder) Build() *cloudevents.Event {
-	return b.Event
+func Event() *EventBuilder {
+	return EventWithoutTTL().TTL()
 }
 
 func (b *EventBuilder) TTL() *EventBuilder {
@@ -429,15 +500,28 @@ func (b *EventBuilder) TTL() *EventBuilder {
 }
 
 func (b *EventBuilder) Type(t string) *EventBuilder {
-	ct := b.Context.GetDataContentType()
-	b.Context = cloudevents.EventContextV02{
-		Type: t,
-		Source: types.URLRef{
-			URL: url.URL{
-				Path: b.Context.GetSource(),
-			},
-		},
-		ContentType: &ct,
-	}
+	ctx := b.Context.AsV02()
+	ctx.Type = t
+	b.Context = ctx
+	return b
+}
+
+func (b *EventBuilder) DataContentType(t string) *EventBuilder {
+	ctx := b.Context.AsV02()
+	ctx.ContentType = &t
+	b.Context = ctx
+	return b
+}
+
+func (b *EventBuilder) Extension(k string, v interface{}) *EventBuilder {
+	ctx := b.Context.AsV02()
+	ctx.SetExtension(k, v)
+	b.Context = ctx
+	return b
+}
+
+func (b *EventBuilder) JSONData(d string) *EventBuilder {
+	b = b.DataContentType("application/json")
+	b.Data = []byte(d)
 	return b
 }
