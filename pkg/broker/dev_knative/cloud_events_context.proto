@@ -2,11 +2,20 @@ syntax = "proto3";
 
 package dev.knative;
 
+// CloudEventsContext defines the standard attributes that are always available
+// in the CEL evaluation environment. For compatibility reasons, these
+// attributes may not be exactly the same as the attributes in the current
+// version of the CloudEvents spec.
 message CloudEventsContext {
   string specversion = 1;
   string type = 2;
   string source = 3;
-  string schemaurl = 4;
-  string datamediatype = 5;
-  string datacontenttype = 6;
+  string subject = 4;
+  string id = 5;
+  // Reserve field 6 for time. Unclear how to represent this in CEL.
+  reserved 6;
+  string schemaurl = 7;
+  string datacontenttype = 8;
+  string datamediatype = 9;
+  string datacontentencoding = 10;
 }

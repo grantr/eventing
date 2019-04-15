@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 
-	"github.com/cloudevents/sdk-go/pkg/cloudevents"
+	"github.com/cloudevents/sdk-go"
 	"github.com/golang/protobuf/jsonpb"
 	structpb "github.com/golang/protobuf/ptypes/struct"
 	"github.com/google/cel-go/cel"
@@ -58,19 +58,20 @@ func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *clo
 	}
 
 	vars := map[string]interface{}{}
-	// Set baseline context fields
-	dmt, err := event.Context.GetDataMediaType()
-	if err != nil {
-		r.logger.Error("Failed to parse data media type", zap.Error(err))
-	}
-
+	// Set baseline context attributes. The attributes available may not be
+	// exactly the same as the attributes defined in the current version of the
+	// CloudEvents spec.
 	ceCtx := &celprotos.CloudEventsContext{
-		Specversion:     event.Context.GetSpecVersion(),
-		Type:            event.Context.GetType(),
-		Source:          event.Context.GetSource(),
-		Schemaurl:       event.Context.GetSchemaURL(),
-		Datamediatype:   dmt,
-		Datacontenttype: event.Context.GetDataContentType(),
+		Specversion: event.SpecVersion(),
+		Type:        event.Type(),
+		Source:      event.Source(),
+		Subject:     event.Subject(),
+		Id:          event.ID(),
+		// TODO Time. Should this be a string or a (cel-native) protobuf timestamp?
+		Schemaurl:           event.SchemaURL(),
+		Datacontenttype:     event.DataContentType(),
+		Datamediatype:       event.DataMediaType(),
+		Datacontentencoding: event.DataContentEncoding(),
 	}
 	vars[CELVarKeyContext] = ceCtx
 
