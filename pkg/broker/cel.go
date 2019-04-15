@@ -24,7 +24,7 @@ const (
 	CELVarKeyExtensions = "ext"
 	// CELVarKeyData is the CEL variable key used for the CloudEvents event data.
 	CELVarKeyData = "data"
-	//TODO add a key that contains both the extensions and the baseline context
+	// TODO add a key that contains both the extensions and the baseline context
 	// vars so extensions can be future proofed.
 )
 
@@ -50,7 +50,7 @@ func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *clo
 		return false, iss.Err()
 	}
 
-	//TODO cache these by hash of expression. Programs are thread-safe so it's
+	// TODO cache these by hash of expression. Programs are thread-safe so it's
 	// ok to share them between triggers and events.
 	prg, err := e.Program(c)
 	if err != nil {
@@ -77,7 +77,7 @@ func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *clo
 	// If the Trigger has requested parsing of extensions, attempt to turn them
 	// into a dynamic struct.
 	if ts.Filter.CEL.ParseExtensions {
-		//TODO should this coerce to V02?
+		// TODO should this coerce to V02?
 		extStruct, err := ceParsedExtensionsStruct(event.Context.AsV02().Extensions)
 		if err != nil {
 			r.logger.Error("Failed to parse event context for CEL filtering", zap.String("id", event.Context.AsV02().ID), zap.Error(err))
@@ -119,7 +119,7 @@ func ceParsedExtensionsStruct(ext map[string]interface{}) (*structpb.Struct, err
 }
 
 func ceParsedDataStruct(event *cloudevents.Event) (*structpb.Struct, error) {
-	//TODO CloudEvents SDK might have a better way to do this with data codecs
+	// TODO CloudEvents SDK might have a better way to do this with data codecs
 	if event.Context.GetDataContentType() == "application/json" {
 		var decodedData map[string]interface{}
 		err := event.DataAs(&decodedData)
@@ -132,7 +132,7 @@ func ceParsedDataStruct(event *cloudevents.Event) (*structpb.Struct, error) {
 		}
 
 		dataStruct := &structpb.Struct{}
-		//TODO is there a way to convert a map into a structpb.Struct?
+		// TODO is there a way to convert a map into a structpb.Struct?
 		if err := jsonpb.Unmarshal(bytes.NewBuffer(dataJSON), dataStruct); err != nil {
 			return nil, err
 		}
