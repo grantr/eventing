@@ -59,12 +59,17 @@ func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *clo
 
 	vars := map[string]interface{}{}
 	// Set baseline context fields
+	dmt, err := event.Context.GetDataMediaType()
+	if err != nil {
+		r.logger.Error("Failed to parse data media type", zap.Error(err))
+	}
+
 	ceCtx := &celprotos.CloudEventsContext{
 		Specversion:     event.Context.GetSpecVersion(),
 		Type:            event.Context.GetType(),
 		Source:          event.Context.GetSource(),
 		Schemaurl:       event.Context.GetSchemaURL(),
-		Datamediatype:   event.Context.GetDataMediaType(),
+		Datamediatype:   dmt,
 		Datacontenttype: event.Context.GetDataContentType(),
 	}
 	vars[CELVarKeyContext] = ceCtx
