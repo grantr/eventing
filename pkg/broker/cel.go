@@ -121,7 +121,7 @@ func ceParsedExtensionsStruct(ext map[string]interface{}) (*structpb.Struct, err
 
 func ceParsedDataStruct(event *cloudevents.Event) (*structpb.Struct, error) {
 	// TODO CloudEvents SDK might have a better way to do this with data codecs
-	if event.Context.GetDataContentType() == "application/json" {
+	if event.DataMediaType() == "application/json" {
 		var decodedData map[string]interface{}
 		err := event.DataAs(&decodedData)
 		if err != nil {
