@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package dev.knative;
 
-message CloudEventContext {
+message CloudEventsContext {
   string specversion = 1;
   string type = 2;
   string source = 3;

@@ -16,13 +16,13 @@ import (
 )
 
 const (
-	// CELVarKeyContext is the CEL variable key used for the CloudEvent event
+	// CELVarKeyContext is the CEL variable key used for the CloudEvents event
 	// context fields defined in the spec.
 	CELVarKeyContext = "ce"
-	// CELVarKeyExtensions is the CEL variable key used for the CloudEvent event
+	// CELVarKeyExtensions is the CEL variable key used for the CloudEvents event
 	// context extensions.
 	CELVarKeyExtensions = "ext"
-	// CELVarKeyData is the CEL variable key used for the CloudEvent event data.
+	// CELVarKeyData is the CEL variable key used for the CloudEvents event data.
 	CELVarKeyData = "data"
 	//TODO add a key that contains both the extensions and the baseline context
 	// vars so extensions can be future proofed.
@@ -30,9 +30,9 @@ const (
 
 func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *cloudevents.Event) (bool, error) {
 	e, err := cel.NewEnv(
-		cel.Types(&celprotos.CloudEventContext{}),
+		cel.Types(&celprotos.CloudEventsContext{}),
 		cel.Declarations(
-			decls.NewIdent(CELVarKeyContext, decls.NewObjectType("dev.knative.CloudEventContext"), nil),
+			decls.NewIdent(CELVarKeyContext, decls.NewObjectType("dev.knative.CloudEventsContext"), nil),
 			decls.NewIdent(CELVarKeyExtensions, decls.NewObjectType("google.protobuf.Struct"), nil),
 			decls.NewIdent(CELVarKeyData, decls.NewObjectType("google.protobuf.Struct"), nil),
 		),
@@ -59,7 +59,7 @@ func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *clo
 
 	vars := map[string]interface{}{}
 	// Set baseline context fields
-	ceCtx := &celprotos.CloudEventContext{
+	ceCtx := &celprotos.CloudEventsContext{
 		Specversion:     event.Context.GetSpecVersion(),
 		Type:            event.Context.GetType(),
 		Source:          event.Context.GetSource(),
