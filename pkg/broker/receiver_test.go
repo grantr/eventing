@@ -483,7 +483,7 @@ func EventWithoutTTL() *EventBuilder {
 				},
 			},
 			ContentType: cloudevents.StringOfApplicationJSON(),
-		},
+		}.AsV02(),
 	}
 	return &EventBuilder{
 		Event: event,
