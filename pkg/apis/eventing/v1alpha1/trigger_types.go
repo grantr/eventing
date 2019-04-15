@@ -64,9 +64,11 @@ type TriggerSpec struct {
 	Subscriber *SubscriberSpec `json:"subscriber,omitempty"`
 }
 
+// TriggerFilter specifies the event filtering strategy for the Trigger. Only
+// one field may be set.
 type TriggerFilter struct {
-	// SourceAndType filters events based on exact matches on the type and source
-	// attributes.
+	// SourceAndType filters events based on exact matches on the CloudEvents
+	// type and source attributes.
 	//
 	// +optional
 	SourceAndType *TriggerFilterSourceAndType `json:"sourceAndType,omitempty"`
@@ -91,15 +93,15 @@ type TriggerFilterSourceAndType struct {
 type TriggerFilterCEL struct {
 	// Expression is the CEL expression to evaluate. Required.
 	Expression string `json:"expression,omitempty"`
-	// ParseExtensions enables parsing of dynamic extensions attached to the event
-	// and makes the extensions available in the CEL environment. If extensions
-	// cannot be parsed they will be ignored. Defaults to false.
+	// ParseExtensions enables parsing of dynamic CloudEvents extensions attached
+	//to the event and makes the extensions available in the CEL environment. If
+	// extensions cannot be parsed they will be ignored. Defaults to false.
 	//
 	// +optional
 	ParseExtensions bool `json:"parseExtensions"`
 	// ParseData enables parsing of the event data and makes the parsed data
 	// available in the CEL environment. Currently this is only available for
-	// JSON data. Defaults to false.
+	// the `application/json` data content type. Defaults to false.
 	//
 	// +optional
 	ParseData bool `json:"parseData"`
