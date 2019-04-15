@@ -98,13 +98,13 @@ type TriggerFilterCEL struct {
 	// extensions cannot be parsed they will be ignored. Defaults to false.
 	//
 	// +optional
-	ParseExtensions bool `json:"parseExtensions"`
+	ParseExtensions bool `json:"parseExtensions,omitempty"`
 	// ParseData enables parsing of the event data and makes the parsed data
 	// available in the CEL environment. Currently this is only available for
 	// the `application/json` data content type. Defaults to false.
 	//
 	// +optional
-	ParseData bool `json:"parseData"`
+	ParseData bool `json:"parseData,omitempty"`
 }
 
 // TriggerStatus represents the current state of a Trigger.
