@@ -1,40 +1,28 @@
 package broker
 
 import (
-	"bytes"
-	"encoding/json"
-
 	"github.com/cloudevents/sdk-go"
-	"github.com/golang/protobuf/jsonpb"
-	structpb "github.com/golang/protobuf/ptypes/struct"
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types"
 	eventingv1alpha1 "github.com/knative/eventing/pkg/apis/eventing/v1alpha1"
-	celprotos "github.com/knative/eventing/pkg/broker/dev_knative"
 	"go.uber.org/zap"
 )
 
 const (
-	// CELVarKeyContext is the CEL variable key used for the CloudEvents event
-	// context fields defined in the spec.
+	// CELVarKeyContext is the CEL variable key used for CloudEvents event
+	// context attributes, both official and extension.
 	CELVarKeyContext = "ce"
-	// CELVarKeyExtensions is the CEL variable key used for the CloudEvents event
-	// context extensions.
-	CELVarKeyExtensions = "ext"
-	// CELVarKeyData is the CEL variable key used for the CloudEvents event data.
+	// CELVarKeyData is the CEL variable key used for parsed, structured event
+	// data.
 	CELVarKeyData = "data"
-	// TODO add a key that contains both the extensions and the baseline context
-	// vars so extensions can be future proofed.
 )
 
 func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *cloudevents.Event) (bool, error) {
 	e, err := cel.NewEnv(
-		cel.Types(&celprotos.CloudEventsContext{}),
 		cel.Declarations(
-			decls.NewIdent(CELVarKeyContext, decls.NewObjectType("dev.knative.CloudEventsContext"), nil),
-			decls.NewIdent(CELVarKeyExtensions, decls.NewObjectType("google.protobuf.Struct"), nil),
-			decls.NewIdent(CELVarKeyData, decls.NewObjectType("google.protobuf.Struct"), nil),
+			decls.NewIdent(CELVarKeyContext, decls.Dyn, nil),
+			decls.NewIdent(CELVarKeyData, decls.Dyn, nil),
 		),
 	)
 	if err != nil {
@@ -57,48 +45,48 @@ func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *clo
 		return false, err
 	}
 
-	vars := map[string]interface{}{}
 	// Set baseline context attributes. The attributes available may not be
 	// exactly the same as the attributes defined in the current version of the
 	// CloudEvents spec.
-	ceCtx := &celprotos.CloudEventsContext{
-		Specversion: event.SpecVersion(),
-		Type:        event.Type(),
-		Source:      event.Source(),
-		Subject:     event.Subject(),
-		Id:          event.ID(),
+	ce := map[string]interface{}{
+		"specversion": event.SpecVersion(),
+		"type":        event.Type(),
+		"source":      event.Source(),
+		"subject":     event.Subject(),
+		"id":          event.ID(),
 		// TODO Time. Should this be a string or a (cel-native) protobuf timestamp?
-		Schemaurl:           event.SchemaURL(),
-		Datacontenttype:     event.DataContentType(),
-		Datamediatype:       event.DataMediaType(),
-		Datacontentencoding: event.DataContentEncoding(),
+		"schemaurl":           event.SchemaURL(),
+		"datacontenttype":     event.DataContentType(),
+		"datamediatype":       event.DataMediaType(),
+		"datacontentencoding": event.DataContentEncoding(),
 	}
-	vars[CELVarKeyContext] = ceCtx
 
 	// If the Trigger has requested parsing of extensions, attempt to turn them
 	// into a dynamic struct.
 	if ts.Filter.CEL.ParseExtensions {
 		// TODO should this coerce to V02?
-		extStruct, err := ceParsedExtensionsStruct(event.Context.AsV02().Extensions)
-		if err != nil {
-			r.logger.Error("Failed to parse event context for CEL filtering", zap.String("id", event.Context.AsV02().ID), zap.Error(err))
-		} else {
-			vars[CELVarKeyExtensions] = extStruct
+		ext := event.Context.AsV02().Extensions
+		if ext != nil {
+			for k, v := range ext {
+				ce[k] = v
+			}
 		}
 	}
 
 	// If the Trigger has requested parsing of data, attempt to turn them into
 	// a dynamic struct.
+	data := make(map[string]interface{})
 	if ts.Filter.CEL.ParseData {
-		dataStruct, err := ceParsedDataStruct(event)
+		data, err = ceParsedData(event)
 		if err != nil {
 			r.logger.Error("Failed to parse event data for CEL filtering", zap.String("id", event.Context.AsV02().ID), zap.Error(err))
-		} else {
-			vars[CELVarKeyData] = dataStruct
 		}
 	}
 
-	out, _, err := prg.Eval(vars)
+	out, _, err := prg.Eval(map[string]interface{}{
+		CELVarKeyContext: ce,
+		CELVarKeyData:    data,
+	})
 	if err != nil {
 		return false, err
 	}
@@ -106,20 +94,7 @@ func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *clo
 	return out == types.True, nil
 }
 
-func ceParsedExtensionsStruct(ext map[string]interface{}) (*structpb.Struct, error) {
-	extJSON, err := json.Marshal(ext)
-	if err != nil {
-		return nil, err
-	}
-
-	extStruct := &structpb.Struct{}
-	if err := jsonpb.Unmarshal(bytes.NewBuffer(extJSON), extStruct); err != nil {
-		return nil, err
-	}
-	return extStruct, nil
-}
-
-func ceParsedDataStruct(event *cloudevents.Event) (*structpb.Struct, error) {
+func ceParsedData(event *cloudevents.Event) (map[string]interface{}, error) {
 	// TODO CloudEvents SDK might have a better way to do this with data codecs
 	if event.DataMediaType() == "application/json" {
 		var decodedData map[string]interface{}
@@ -127,17 +102,7 @@ func ceParsedDataStruct(event *cloudevents.Event) (*structpb.Struct, error) {
 		if err != nil {
 			return nil, err
 		}
-		dataJSON, err := json.Marshal(decodedData)
-		if err != nil {
-			return nil, err
-		}
-
-		dataStruct := &structpb.Struct{}
-		// TODO is there a way to convert a map into a structpb.Struct?
-		if err := jsonpb.Unmarshal(bytes.NewBuffer(dataJSON), dataStruct); err != nil {
-			return nil, err
-		}
-		return dataStruct, nil
+		return decodedData, nil
 	}
 	return nil, nil
 }

@@ -200,7 +200,7 @@ func TestReceiver(t *testing.T) {
 		},
 		"Dispatch succeeded - CEL parsed extensions": {
 			triggers: []*TriggerBuilder{
-				Trigger().SubscriberURI().FilterCEL(`ext.foo == "bar"`).CELParseExtensions(),
+				Trigger().SubscriberURI().FilterCEL(`ce.foo == "bar"`).CELParseExtensions(),
 			},
 			event:            Event().Extension("foo", "bar"),
 			expectedDispatch: true,
