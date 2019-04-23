@@ -196,11 +196,10 @@
   revision = "24b0969c4cb722950103eed87108c8d291a8df00"
 
 [[projects]]
-  digest = "1:771d03745d3f566fb910a47ab1fa959379398df1d1768e44b8c5bc3865d1407a"
+  digest = "1:ac06172e8420ee3192527e84a3f373ada56043e6b0e27c2e765b4dd8408f2ec9"
   name = "github.com/golang/protobuf"
   packages = [
     "descriptor",
-    "jsonpb",
     "proto",
     "protoc-gen-go/descriptor",
     "ptypes",
@@ -1286,15 +1285,13 @@
     "github.com/cloudevents/sdk-go/pkg/cloudevents/transport/http",
     "github.com/cloudevents/sdk-go/pkg/cloudevents/types",
     "github.com/fsnotify/fsnotify",
-    "github.com/golang/protobuf/jsonpb",
-    "github.com/golang/protobuf/proto",
-    "github.com/golang/protobuf/ptypes/struct",
     "github.com/google/cel-go/cel",
     "github.com/google/cel-go/checker/decls",
     "github.com/google/cel-go/common/types",
     "github.com/google/go-cmp/cmp",
     "github.com/google/go-cmp/cmp/cmpopts",
     "github.com/google/uuid",
+    "github.com/hashicorp/golang-lru",
     "github.com/knative/build/pkg/apis/build/v1alpha1",
     "github.com/knative/pkg/apis",
     "github.com/knative/pkg/apis/duck",
