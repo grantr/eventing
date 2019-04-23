@@ -1,3 +1,19 @@
+/*
+ * Copyright 2019 The Knative Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package broker
 
 import (
@@ -19,28 +35,9 @@ const (
 )
 
 func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *cloudevents.Event) (bool, error) {
-	e, err := cel.NewEnv(
-		cel.Declarations(
-			decls.NewIdent(CELVarKeyContext, decls.Dyn, nil),
-			decls.NewIdent(CELVarKeyData, decls.Dyn, nil),
-		),
-	)
-	if err != nil {
-		return false, err
-	}
+	expr := ts.Filter.CEL.Expression
 
-	p, iss := e.Parse(ts.Filter.CEL.Expression)
-	if iss != nil && iss.Err() != nil {
-		return false, iss.Err()
-	}
-	c, iss := e.Check(p)
-	if iss != nil && iss.Err() != nil {
-		return false, iss.Err()
-	}
-
-	// TODO cache these by hash of expression. Programs are thread-safe so it's
-	// ok to share them between triggers and events.
-	prg, err := e.Program(c)
+	prg, err := getOrCacheProgram(expr, programForExpression)
 	if err != nil {
 		return false, err
 	}
@@ -77,8 +74,7 @@ func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *clo
 	// a dynamic struct.
 	data := make(map[string]interface{})
 	if ts.Filter.CEL.ParseData {
-		data, err = ceParsedData(event)
-		if err != nil {
+		if err := event.DataAs(&data); err != nil {
 			r.logger.Error("Failed to parse event data for CEL filtering", zap.String("id", event.Context.AsV02().ID), zap.Error(err))
 		}
 	}
@@ -94,15 +90,29 @@ func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *clo
 	return out == types.True, nil
 }
 
-func ceParsedData(event *cloudevents.Event) (map[string]interface{}, error) {
-	// TODO CloudEvents SDK might have a better way to do this with data codecs
-	if event.DataMediaType() == "application/json" {
-		var decodedData map[string]interface{}
-		err := event.DataAs(&decodedData)
-		if err != nil {
-			return nil, err
-		}
-		return decodedData, nil
+func programForExpression(expr string) (cel.Program, error) {
+	env, err := cel.NewEnv(
+		cel.Declarations(
+			decls.NewIdent(CELVarKeyContext, decls.Dyn, nil),
+			decls.NewIdent(CELVarKeyData, decls.Dyn, nil),
+		),
+	)
+	if err != nil {
+		return nil, err
 	}
-	return nil, nil
+
+	parsed, iss := env.Parse(expr)
+	if iss != nil && iss.Err() != nil {
+		return nil, iss.Err()
+	}
+	checked, iss := env.Check(parsed)
+	if iss != nil && iss.Err() != nil {
+		return nil, iss.Err()
+	}
+
+	prg, err := env.Program(checked)
+	if err != nil {
+		return nil, err
+	}
+	return prg, nil
 }
