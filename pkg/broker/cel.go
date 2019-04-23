@@ -51,7 +51,7 @@ func (r *Receiver) filterEventByCEL(ts *eventingv1alpha1.TriggerSpec, event *clo
 		"source":      event.Source(),
 		"subject":     event.Subject(),
 		"id":          event.ID(),
-		// TODO Time. Should this be a string or a (cel-native) protobuf timestamp?
+		// TODO Time. This should be a protobuf Timestamp
 		"schemaurl":           event.SchemaURL(),
 		"datacontenttype":     event.DataContentType(),
 		"datamediatype":       event.DataMediaType(),
