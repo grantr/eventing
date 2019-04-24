@@ -1,5 +1,6 @@
 /*
 Copyright 2019 The Knative Authors
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -21,8 +22,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/cloudevents/sdk-go/pkg/cloudevents"
-	"github.com/cloudevents/sdk-go/pkg/cloudevents/client"
+	cloudevents "github.com/cloudevents/sdk-go"
 )
 
 type example struct {
@@ -61,7 +61,7 @@ func gotEvent(event cloudevents.Event, resp *cloudevents.EventResponse) error {
 func main() {
 	// parse the command line flags
 	flag.Parse()
-	c, err := client.NewDefault()
+	c, err := cloudevents.NewDefaultClient()
 	if err != nil {
 		log.Fatalf("failed to create client, %v", err)
 	}

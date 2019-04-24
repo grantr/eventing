@@ -1,5 +1,6 @@
 /*
 Copyright 2018 The Knative Authors
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -31,9 +32,8 @@ type Clients struct {
 }
 
 // NewClients instantiates and returns several clientsets required for making request to the
-// cluster specified by the combination of clusterName and configPath. Clients can
-// make requests within namespace.
-func NewClients(configPath string, clusterName string, namespace string) (*Clients, error) {
+// cluster specified by the combination of clusterName and configPath.
+func NewClients(configPath string, clusterName string) (*Clients, error) {
 	clients := &Clients{}
 	cfg, err := test.BuildClientConfig(configPath, clusterName)
 	if err != nil {
