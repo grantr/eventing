@@ -459,6 +459,14 @@
   revision = "f2b4162afba35581b6d4a50d3b8f34e33c144682"
 
 [[projects]]
+  digest = "1:b8870bf2606dca65dc382f4cb8b7a434f17ff36a915451bda12788e9620be368"
+  name = "github.com/kelseyhightower/envconfig"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "f611eb38b3875cc3bd991ca91c51d06446afa14c"
+  version = "v1.3.0"
+
+[[projects]]
   digest = "1:57d04562d05dd4500ff1e7e47f2e62b9be0531388377a3b691a012ce70b210d5"
   name = "github.com/knative/pkg"
   packages = [
@@ -709,6 +717,14 @@
   packages = ["."]
   pruneopts = "NUT"
   revision = "3113b8401b8a98917cde58f8bbd42a1b1c03b1fd"
+
+[[projects]]
+  digest = "1:53c3320ee307f01fd24a88e396a8d2239cd8346d1a085320209319f2d33f59cc"
+  name = "github.com/robfig/cron"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "b41be1df696709bb6395fe435af20370037c0b4c"
+  version = "v1.1"
 
 [[projects]]
   digest = "1:d917313f309bda80d27274d53985bc65651f81a5b66b820749ac7f8ef061fd04"
@@ -1394,7 +1410,11 @@
     "github.com/Shopify/sarama",
     "github.com/bsm/sarama-cluster",
     "github.com/cloudevents/sdk-go",
+    "github.com/cloudevents/sdk-go/pkg/cloudevents",
+    "github.com/cloudevents/sdk-go/pkg/cloudevents/client",
+    "github.com/cloudevents/sdk-go/pkg/cloudevents/datacodec/json",
     "github.com/cloudevents/sdk-go/pkg/cloudevents/transport/http",
+    "github.com/cloudevents/sdk-go/pkg/cloudevents/types",
     "github.com/fsnotify/fsnotify",
     "github.com/google/cel-go/cel",
     "github.com/google/cel-go/checker/decls",
@@ -1403,6 +1423,7 @@
     "github.com/google/go-cmp/cmp/cmpopts",
     "github.com/google/uuid",
     "github.com/hashicorp/golang-lru",
+    "github.com/kelseyhightower/envconfig",
     "github.com/knative/pkg/apis",
     "github.com/knative/pkg/apis/duck",
     "github.com/knative/pkg/apis/duck/v1alpha1",
@@ -1411,6 +1432,7 @@
     "github.com/knative/pkg/client/listers/istio/v1alpha3",
     "github.com/knative/pkg/configmap",
     "github.com/knative/pkg/controller",
+    "github.com/knative/pkg/kmeta",
     "github.com/knative/pkg/kmp",
     "github.com/knative/pkg/logging",
     "github.com/knative/pkg/logging/logkey",
@@ -1427,7 +1449,7 @@
     "github.com/knative/test-infra/tools/dep-collector",
     "github.com/nats-io/go-nats-streaming",
     "github.com/nats-io/nats-streaming-server/server",
-    "github.com/prometheus/client_golang/prometheus/promhttp",
+    "github.com/robfig/cron",
     "go.opencensus.io/exporter/prometheus",
     "go.opencensus.io/stats",
     "go.opencensus.io/stats/view",
@@ -1437,6 +1459,7 @@
     "go.uber.org/zap",
     "go.uber.org/zap/zapcore",
     "go.uber.org/zap/zaptest/observer",
+    "golang.org/x/net/context",
     "golang.org/x/oauth2/google",
     "google.golang.org/api/option",
     "gopkg.in/yaml.v2",
@@ -1466,17 +1489,21 @@
     "k8s.io/client-go/dynamic",
     "k8s.io/client-go/dynamic/fake",
     "k8s.io/client-go/informers",
+    "k8s.io/client-go/informers/apps/v1",
     "k8s.io/client-go/informers/core/v1",
+    "k8s.io/client-go/informers/rbac/v1",
     "k8s.io/client-go/kubernetes",
     "k8s.io/client-go/kubernetes/fake",
     "k8s.io/client-go/kubernetes/scheme",
     "k8s.io/client-go/kubernetes/typed/core/v1",
     "k8s.io/client-go/listers/apps/v1",
     "k8s.io/client-go/listers/core/v1",
+    "k8s.io/client-go/listers/rbac/v1",
     "k8s.io/client-go/plugin/pkg/client/auth/gcp",
     "k8s.io/client-go/rest",
     "k8s.io/client-go/testing",
     "k8s.io/client-go/tools/cache",
+    "k8s.io/client-go/tools/clientcmd",
     "k8s.io/client-go/tools/record",
     "k8s.io/client-go/util/flowcontrol",
     "k8s.io/client-go/util/workqueue",
