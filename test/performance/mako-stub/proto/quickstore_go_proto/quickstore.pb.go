@@ -6,11 +6,12 @@ package mako_internal_quickstore_microservice
 import (
 	context "context"
 	fmt "fmt"
+	math "math"
+
 	proto "github.com/golang/protobuf/proto"
 	quickstore_go_proto "github.com/google/mako/proto/quickstore/quickstore_go_proto"
 	mako_go_proto "github.com/google/mako/spec/proto/mako_go_proto"
 	grpc "google.golang.org/grpc"
-	math "math"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.

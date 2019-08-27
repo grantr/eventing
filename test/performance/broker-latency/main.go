@@ -27,7 +27,7 @@ import (
 
 	cloudevents "github.com/cloudevents/sdk-go"
 	"github.com/cloudevents/sdk-go/pkg/cloudevents/transport/http"
-	"github.com/google/mako/helpers/go/quickstore"
+	"github.com/google/mako/go/quickstore"
 	"golang.org/x/sync/errgroup"
 	"knative.dev/eventing/test/performance"
 	"knative.dev/pkg/signals"
