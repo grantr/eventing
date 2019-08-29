@@ -19,7 +19,9 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"github.com/google/mako/helpers/go/quickstore"
+	"io/ioutil"
 	"knative.dev/eventing/test/common"
 	"log"
 	"math/rand"
@@ -177,7 +179,7 @@ func main() {
 	// sleep 30 seconds before sending the events
 	// TODO(Fredy-Z): this is a bit hacky, as ideally, we need to wait for the Trigger/Subscription that uses it as a
 	//                Subscriber to become ready before sending the events, but we don't have a way to coordinate between them.
-	//time.Sleep(30 * time.Second)
+	time.Sleep(30 * time.Second)
 
 	client := http.Client{Transport: requestInterceptor{before: func(request *http.Request) {
 		id, _ := strconv.ParseUint(request.Header["Ce-Id"][0], 10, 64)
@@ -278,8 +280,9 @@ func processLatencies(q *quickstore.Quickstore) {
 					}
 				} else {
 					sendLatency := d.at.Sub(timestampSent)
-					//fmt.Printf("%d,%d,\n", timestampSent.Nanosecond(), sendLatency.Nanoseconds())
-					// TODO mako accepts float64, which imo could lead to losing some precision. It should accept int64
+					// Uncomment to get CSV directly from this container log
+					//fmt.Printf("%f,%d,\n", mako.XTime(timestampSent), sendLatency.Nanoseconds())
+					// TODO mako accepts float64, which imo could lead to losing some precision on local tests. It should accept int64
 					if qerr := q.AddSamplePoint(mako.XTime(timestampSent), map[string]float64{"pl": sendLatency.Seconds()}); qerr != nil {
 						log.Printf("ERROR AddSamplePoint: %v", qerr)
 					}
@@ -290,8 +293,9 @@ func processLatencies(q *quickstore.Quickstore) {
 				timestampSent, ok := sentEventsMap[r.eventId]
 				if ok {
 					e2eLatency := r.at.Sub(timestampSent)
-					//fmt.Printf("%d,%d,\n", timestampSent.Nanosecond(), e2eLatency.Nanoseconds())
-					// TODO mako accepts float64, which imo could lead to losing some precision. It should accept int64
+					// Uncomment to get CSV directly from this container log
+					//fmt.Printf("%f,,%d\n", mako.XTime(timestampSent), e2eLatency.Nanoseconds())
+					// TODO mako accepts float64, which imo could lead to losing some precision on local tests. It should accept int64
 					if qerr := q.AddSamplePoint(mako.XTime(timestampSent), map[string]float64{"dl": e2eLatency.Seconds()}); qerr != nil {
 						log.Printf("ERROR AddSamplePoint: %v", qerr)
 					}

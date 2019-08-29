@@ -50,7 +50,7 @@ func (cet CloudEventsTargeter) VegetaTargeter() vegeta.Targeter {
 	}
 
 	return func(t *vegeta.Target) error {
-		t.Method = "PUT"
+		t.Method = "POST"
 		t.URL = cet.sinkUrl
 
 		// Generate CloudEvent
