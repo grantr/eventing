@@ -3,12 +3,17 @@ package ingress
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"reflect"
+	"strconv"
+	"strings"
 	"time"
 
 	cloudevents "github.com/cloudevents/sdk-go"
+	"go.opencensus.io/plugin/ochttp/propagation/b3"
+	"go.opencensus.io/trace"
 	"go.uber.org/zap"
 	"knative.dev/eventing/pkg/broker"
 )
@@ -28,7 +33,7 @@ type Handler struct {
 	Reporter   StatsReporter
 }
 
-func (h *Handler) Start(stopCh <-chan struct{}) error {
+func (h *Handler) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -41,7 +46,7 @@ func (h *Handler) Start(stopCh <-chan struct{}) error {
 	select {
 	case err := <-errCh:
 		return err
-	case <-stopCh:
+	case <-ctx.Done():
 		break
 	}
 
@@ -69,6 +74,8 @@ func (h *Handler) serveHTTP(ctx context.Context, event cloudevents.Event, resp *
 		resp.Status = http.StatusNotFound
 		return nil
 	}
+
+	tctx = addOutGoingTracing(ctx, event, tctx)
 
 	reporterArgs := &ReportArgs{
 		ns:        h.Namespace,
@@ -122,4 +129,21 @@ func (h *Handler) getTTLToSet(event *cloudevents.Event) int {
 		h.Logger.Info("TTL attribute wasn't a float64, defaulting", zap.Any("ttlInterface", ttlInterface), zap.Any("typeOf(ttlInterface)", reflect.TypeOf(ttlInterface)))
 	}
 	return int(ttl) - 1
+}
+
+func addOutGoingTracing(ctx context.Context, event cloudevents.Event, tctx cloudevents.HTTPTransportContext) cloudevents.HTTPTransportContext {
+	// Inject trace into HTTP header.
+	spanContext := trace.FromContext(ctx).SpanContext()
+	tctx.Header.Set(b3.TraceIDHeader, spanContext.TraceID.String())
+	tctx.Header.Set(b3.SpanIDHeader, spanContext.SpanID.String())
+	sampled := 0
+	if spanContext.IsSampled() {
+		sampled = 1
+	}
+	tctx.Header.Set(b3.SampledHeader, strconv.Itoa(sampled))
+
+	// Set traceparent, a CloudEvent documented extension attribute for distributed tracing.
+	traceParent := strings.Join([]string{"00", spanContext.TraceID.String(), spanContext.SpanID.String(), fmt.Sprintf("%02x", spanContext.TraceOptions)}, "-")
+	event.SetExtension(broker.TraceParent, traceParent)
+	return tctx
 }
