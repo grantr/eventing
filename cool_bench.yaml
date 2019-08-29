@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: broker-latency-myself
+  namespace: perf-eventing
+spec:
+  serviceAccountName: default
+  restartPolicy: Never
+  containers:
+    - name: "broker-latency"
+      image: docker.io/slinkydeveloper/latencymako
+      resources:
+        requests:
+          cpu: 1000m
+          memory: 3Gi
+      args:
+        - "--sink=http://localhost:8080"
+      volumeMounts:
+        - name: config-mako
+          mountPath: /etc/config-mako
+      terminationMessagePolicy: FallbackToLogsOnError
+    - name: "mako-stub"
+      image: docker.io/slinkydeveloper/stub-sidecar
+      terminationMessagePolicy: FallbackToLogsOnError
+  volumes:
+    - name: config-mako
+      configMap:
+        name: config-mako
