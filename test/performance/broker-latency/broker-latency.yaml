@@ -14,11 +14,14 @@ spec:
       resources:
         requests:
           cpu: 1000m
-          memory: 1Gi
+          memory: 2Gi
       ports:
         - containerPort: 8080
       args:
-        - "--sink=http://default-broker.perf-eventing.svc.cluster.local"
+        - "--sink=http://in-memory-test-broker-broker.perf-eventing.svc.cluster.local"
+        - "--duration=60"
+        - "--rps=250"
+        - "--max-expected-latency=30"
       volumeMounts:
         - name: config-mako
           mountPath: /etc/config-mako
