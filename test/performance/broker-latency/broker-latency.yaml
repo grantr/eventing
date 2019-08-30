@@ -18,7 +18,7 @@ spec:
       ports:
         - containerPort: 8080
       args:
-        - "--sink=http://default-broker.perf-eventing.svc.cluster.local"
+        - "--sink=http://in-memory-test-broker-broker.perf-eventing.svc.cluster.local"
       volumeMounts:
         - name: config-mako
           mountPath: /etc/config-mako

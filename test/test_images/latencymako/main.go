@@ -48,7 +48,6 @@ var (
 	msgSize        int
 	timeout        int
 	sentCh         chan sentState
-	deliveredCh    chan deliveredState
 	receivedCh     chan receivedState
 	resultCh       chan eventStatus
 	secondDuration int
@@ -68,22 +67,6 @@ const (
 	corrupted  // TODO(Fredy-Z): corrupted status is not being used now
 )
 
-type requestInterceptor struct {
-	before func(*http.Request)
-	after  func(*http.Request, *http.Response, error)
-}
-
-func (r requestInterceptor) RoundTrip(request *http.Request) (*http.Response, error) {
-	if r.before != nil {
-		r.before(request)
-	}
-	res, err := http.DefaultTransport.RoundTrip(request)
-	if r.after != nil {
-		r.after(request, res, err)
-	}
-	return res, err
-}
-
 type state struct {
 	eventId uint64
 	failed  bool
@@ -91,7 +74,6 @@ type state struct {
 }
 
 type sentState state
-type deliveredState state
 type receivedState state
 
 func init() {
@@ -110,6 +92,37 @@ func generateRandString(length int) string {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
 	}
 	return string(b)
+}
+
+type requestInterceptor struct {
+	q *quickstore.Quickstore
+}
+
+func (r requestInterceptor) RoundTrip(request *http.Request) (*http.Response, error) {
+	ceId, _ := strconv.ParseUint(request.Header["Ce-Id"][0], 10, 64)
+	sendTimestamp := time.Now()
+	sentCh <- sentState{eventId: ceId, at: sendTimestamp}
+
+	// Send the request
+	response, err := http.DefaultTransport.RoundTrip(request)
+
+	publishLatency := time.Since(sendTimestamp)
+
+	// Register send latency
+	if err != nil || response.StatusCode < 200 || response.StatusCode > 300 {
+		fmt.Printf("%+v\n", response)
+		body, _ := ioutil.ReadAll(response.Body)
+		fmt.Printf("%+v\n", string(body))
+		panic(err)
+		if qerr := r.q.AddError(mako.XTime(sendTimestamp), "undelivered"); qerr != nil {
+			log.Printf("ERROR AddError: %v", qerr)
+		}
+	} else {
+		if qerr := r.q.AddSamplePoint(mako.XTime(sendTimestamp), map[string]float64{"pl": publishLatency.Seconds()}); qerr != nil {
+			log.Printf("ERROR AddSamplePoint: %v", qerr)
+		}
+	}
+	return response, err
 }
 
 func main() {
@@ -148,7 +161,6 @@ func main() {
 
 	// Create all channels
 	sentCh = make(chan sentState, pessimisticNumberOfMessagesInsideAChannel)
-	deliveredCh = make(chan deliveredState, pessimisticNumberOfMessagesInsideAChannel)
 	receivedCh = make(chan receivedState, pessimisticNumberOfMessagesInsideAChannel)
 	resultCh = make(chan eventStatus, pessimisticNumberOfTotalMessages)
 
@@ -181,17 +193,7 @@ func main() {
 	//                Subscriber to become ready before sending the events, but we don't have a way to coordinate between them.
 	time.Sleep(30 * time.Second)
 
-	client := http.Client{Transport: requestInterceptor{before: func(request *http.Request) {
-		id, _ := strconv.ParseUint(request.Header["Ce-Id"][0], 10, 64)
-		sentCh <- sentState{eventId: id, at: time.Now()}
-	}, after: func(request *http.Request, response *http.Response, e error) {
-		id, _ := strconv.ParseUint(request.Header["Ce-Id"][0], 10, 64)
-		if e != nil || response.StatusCode < 200 || response.StatusCode > 300 {
-			deliveredCh <- deliveredState{eventId: id, failed: true}
-		} else {
-			deliveredCh <- deliveredState{eventId: id, at: time.Now()}
-		}
-	}}}
+	client := http.Client{Transport: requestInterceptor{q}}
 
 	vegetaResults := vegeta.NewAttacker(
 		vegeta.Client(&client),
@@ -212,8 +214,8 @@ func main() {
 	}
 
 	// publish error counts as aggregate metrics
-	q.AddRunAggregate("pe", float64(publishErrorCount))
-	q.AddRunAggregate("de", float64(deliverErrorCount))
+	_ = q.AddRunAggregate("pe", float64(publishErrorCount))
+	_ = q.AddRunAggregate("de", float64(deliverErrorCount))
 
 	out, err := q.Store()
 	if err != nil {
@@ -244,9 +246,7 @@ func processVegetaResult(vegetaResults <-chan *vegeta.Result) {
 	// Discard all vegeta results and wait the end of this channel
 	for _ = range vegetaResults {
 	}
-
 	close(sentCh)
-	close(deliveredCh)
 
 	// Let's assume that after 5 seconds all responses are received
 	time.Sleep(5 * time.Second)
@@ -258,7 +258,10 @@ func processVegetaResult(vegetaResults <-chan *vegeta.Result) {
 }
 
 func processReceiveEvent(event cloudevents.Event) {
-	id, _ := strconv.ParseUint(event.ID(), 10, 64)
+	id, err := strconv.ParseUint(event.ID(), 10, 64)
+	if err != nil {
+		panic(err)
+	}
 	receivedCh <- receivedState{eventId: id, at: time.Now()}
 }
 
@@ -270,29 +273,16 @@ func processLatencies(q *quickstore.Quickstore) {
 			if ok {
 				sentEventsMap[s.eventId] = s.at
 			}
-		case d, ok := <-deliveredCh:
-			if ok {
-				timestampSent := sentEventsMap[d.eventId]
-				if d.failed {
-					resultCh <- undelivered
-					if qerr := q.AddError(mako.XTime(timestampSent), "undelivered"); qerr != nil {
-						log.Printf("ERROR AddError: %v", qerr)
-					}
-				} else {
-					sendLatency := d.at.Sub(timestampSent)
-					// Uncomment to get CSV directly from this container log
-					//fmt.Printf("%f,%d,\n", mako.XTime(timestampSent), sendLatency.Nanoseconds())
-					// TODO mako accepts float64, which imo could lead to losing some precision on local tests. It should accept int64
-					if qerr := q.AddSamplePoint(mako.XTime(timestampSent), map[string]float64{"pl": sendLatency.Seconds()}); qerr != nil {
-						log.Printf("ERROR AddSamplePoint: %v", qerr)
-					}
-				}
-			}
 		case r, ok := <-receivedCh:
 			if ok {
 				timestampSent, ok := sentEventsMap[r.eventId]
 				if ok {
+					// Something is definitely wrong!!! Id: 0, Send time 2019-08-30 07:28:49.333409237 +0000 UTC m=+32.584607116, Receive time 2019-08-30 07:28:49.333367005 +0000 UTC m=+32.584564925, Latency: -42191
 					e2eLatency := r.at.Sub(timestampSent)
+					if e2eLatency.Seconds() < 0 {
+						fmt.Printf("Something is definitely wrong!!! Id: %v, Send time %v, Receive time %v, Latency: %v ns", r.eventId, timestampSent, r.at, e2eLatency.Nanoseconds())
+						panic(e2eLatency)
+					}
 					// Uncomment to get CSV directly from this container log
 					//fmt.Printf("%f,,%d\n", mako.XTime(timestampSent), e2eLatency.Nanoseconds())
 					// TODO mako accepts float64, which imo could lead to losing some precision on local tests. It should accept int64
