@@ -19,14 +19,25 @@ spec:
         - containerPort: 8080
       args:
         - "--sink=http://default-broker.perf-eventing.svc.cluster.local"
+        - "--tags=branch=latency_vegeta"
+        - "--duration=60"
       volumeMounts:
         - name: config-mako
           mountPath: /etc/config-mako
       terminationMessagePolicy: FallbackToLogsOnError
-    - name: "mako-stub"
-      image: knative.dev/pkg/test/mako/stub-sidecar
-      terminationMessagePolicy: FallbackToLogsOnError
+    - name: "mako"
+      image: gcr.io/knative-performance/mako-microservice:latest
+      #image: knative.dev/pkg/test/mako/stub-sidecar
+      env:
+      - name: GOOGLE_APPLICATION_CREDENTIALS
+        value: /var/secret/robot.json
+      volumeMounts:
+      - name: mako-upload
+        mountPath: /var/secret
   volumes:
-    - name: config-mako
-      configMap:
-        name: config-mako
+  - name: mako-upload
+    secret:
+      secretName: mako-upload
+  - name: config-mako
+    configMap:
+      name: config-mako

@@ -19,15 +19,15 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
-	"github.com/google/mako/helpers/go/quickstore"
-	"io/ioutil"
-	"knative.dev/eventing/test/common"
 	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/google/mako/go/quickstore"
+	"knative.dev/eventing/test/common"
 
 	cloudevents "github.com/cloudevents/sdk-go"
 	vegeta "github.com/tsenart/vegeta/lib"
@@ -47,13 +47,14 @@ var (
 	sinkURL        string
 	msgSize        int
 	timeout        int
-	sentCh         chan sentState
 	deliveredCh    chan deliveredState
 	receivedCh     chan receivedState
 	resultCh       chan eventStatus
 	secondDuration int
 	rps            int
 	fatalf         func(f string, args ...interface{})
+	additionalTags string
+	idCounter      int64
 )
 
 // eventStatus is status of the event delivery.
@@ -85,9 +86,11 @@ func (r requestInterceptor) RoundTrip(request *http.Request) (*http.Response, er
 }
 
 type state struct {
-	eventId uint64
-	failed  bool
-	at      time.Time
+	eventId      uint64
+	failed       bool
+	sendTime time.Time
+	publishTime time.Time
+	receivedTime time.Time
 }
 
 type sentState state
@@ -99,6 +102,7 @@ func init() {
 	flag.IntVar(&msgSize, "msg-size", 100, "The size of each message we want to send. Generate random strings to avoid caching.")
 	flag.IntVar(&secondDuration, "duration", 10, "Duration of the benchmark in seconds")
 	flag.IntVar(&rps, "rps", 1000, "Maximum request per seconds")
+	flag.StringVar(&additionalTags, "tags", "", "Additional benchmark tags, comma-separated.")
 }
 
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -124,8 +128,10 @@ func main() {
 	ctx, cancel := context.WithTimeout(ctx, 6*time.Minute)
 	defer cancel()
 
+	extraTags := strings.Split(additionalTags, ",")
+
 	// Use the benchmark key created
-	ctx, q, qclose, err := mako.Setup(ctx)
+	ctx, q, qclose, err := mako.Setup(ctx, extraTags...)
 	if err != nil {
 		log.Fatalf("Failed to setup mako: %v", err)
 	}
@@ -147,7 +153,6 @@ func main() {
 	pessimisticNumberOfMessagesInsideAChannel := rps * 3
 
 	// Create all channels
-	sentCh = make(chan sentState, pessimisticNumberOfMessagesInsideAChannel)
 	deliveredCh = make(chan deliveredState, pessimisticNumberOfMessagesInsideAChannel)
 	receivedCh = make(chan receivedState, pessimisticNumberOfMessagesInsideAChannel)
 	resultCh = make(chan eventStatus, pessimisticNumberOfTotalMessages)
@@ -182,15 +187,20 @@ func main() {
 	time.Sleep(30 * time.Second)
 
 	client := http.Client{Transport: requestInterceptor{before: func(request *http.Request) {
-		id, _ := strconv.ParseUint(request.Header["Ce-Id"][0], 10, 64)
-		sentCh <- sentState{eventId: id, at: time.Now()}
+		sendTime := time.Now()
+		idCounter++
+		request.Header.Set("Ce-Id", strconv.FormatInt(idCounter, 10))
+		// reset time attribute to current time
+		request.Header.Set("Ce-Time", sendTime.Format(time.RFC3339Nano))
 	}, after: func(request *http.Request, response *http.Response, e error) {
-		id, _ := strconv.ParseUint(request.Header["Ce-Id"][0], 10, 64)
-		if e != nil || response.StatusCode < 200 || response.StatusCode > 300 {
-			deliveredCh <- deliveredState{eventId: id, failed: true}
-		} else {
-			deliveredCh <- deliveredState{eventId: id, at: time.Now()}
+		publishTime := time.Now()
+	        sendTime, _ := time.Parse(time.RFC3339Nano, request.Header.Get("Ce-Time"))
+		delState := deliveredState{sendTime: sendTime, publishTime: publishTime}
+		if e != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
+			log.Printf("ERROR: delivery failed: %v\n", err)
+			delState.failed = true
 		}
+		deliveredCh <- delState
 	}}}
 
 	vegetaResults := vegeta.NewAttacker(
@@ -245,7 +255,6 @@ func processVegetaResult(vegetaResults <-chan *vegeta.Result) {
 	for _ = range vegetaResults {
 	}
 
-	close(sentCh)
 	close(deliveredCh)
 
 	// Let's assume that after 5 seconds all responses are received
@@ -258,45 +267,43 @@ func processVegetaResult(vegetaResults <-chan *vegeta.Result) {
 }
 
 func processReceiveEvent(event cloudevents.Event) {
-	id, _ := strconv.ParseUint(event.ID(), 10, 64)
-	receivedCh <- receivedState{eventId: id, at: time.Now()}
+	receivedCh <- receivedState{sendTime: event.Context.GetTime(), receivedTime: time.Now()}
 }
 
 func processLatencies(q *quickstore.Quickstore) {
-	sentEventsMap := make(map[uint64]time.Time)
 	for {
 		select {
-		case s, ok := <-sentCh:
-			if ok {
-				sentEventsMap[s.eventId] = s.at
-			}
 		case d, ok := <-deliveredCh:
 			if ok {
-				timestampSent := sentEventsMap[d.eventId]
 				if d.failed {
 					resultCh <- undelivered
-					if qerr := q.AddError(mako.XTime(timestampSent), "undelivered"); qerr != nil {
+					if qerr := q.AddError(mako.XTime(d.sendTime), "undelivered"); qerr != nil {
 						log.Printf("ERROR AddError: %v", qerr)
 					}
 				} else {
-					sendLatency := d.at.Sub(timestampSent)
+					sendLatency := d.publishTime.Sub(d.sendTime)
+					if sendLatency < 0 {
+						log.Printf("WARN: negative latency %d (%s - %s)", sendLatency, d.publishTime.Format(time.RFC3339Nano), d.sendTime.Format(time.RFC3339Nano))
+					}
 					// Uncomment to get CSV directly from this container log
 					//fmt.Printf("%f,%d,\n", mako.XTime(timestampSent), sendLatency.Nanoseconds())
 					// TODO mako accepts float64, which imo could lead to losing some precision on local tests. It should accept int64
-					if qerr := q.AddSamplePoint(mako.XTime(timestampSent), map[string]float64{"pl": sendLatency.Seconds()}); qerr != nil {
+					if qerr := q.AddSamplePoint(mako.XTime(d.sendTime), map[string]float64{"pl": sendLatency.Seconds()}); qerr != nil {
 						log.Printf("ERROR AddSamplePoint: %v", qerr)
 					}
 				}
 			}
 		case r, ok := <-receivedCh:
 			if ok {
-				timestampSent, ok := sentEventsMap[r.eventId]
 				if ok {
-					e2eLatency := r.at.Sub(timestampSent)
+					e2eLatency := r.receivedTime.Sub(r.sendTime)
+					if e2eLatency < 0 {
+						log.Printf("WARN: negative latency %d (%s - %s)", e2eLatency, r.receivedTime.Format(time.RFC3339Nano), r.sendTime.Format(time.RFC3339Nano))
+					}
 					// Uncomment to get CSV directly from this container log
 					//fmt.Printf("%f,,%d\n", mako.XTime(timestampSent), e2eLatency.Nanoseconds())
 					// TODO mako accepts float64, which imo could lead to losing some precision on local tests. It should accept int64
-					if qerr := q.AddSamplePoint(mako.XTime(timestampSent), map[string]float64{"dl": e2eLatency.Seconds()}); qerr != nil {
+					if qerr := q.AddSamplePoint(mako.XTime(r.sendTime), map[string]float64{"dl": e2eLatency.Seconds()}); qerr != nil {
 						log.Printf("ERROR AddSamplePoint: %v", qerr)
 					}
 				} else {

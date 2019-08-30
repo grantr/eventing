@@ -1,12 +1,13 @@
 package common
 
 import (
-	cloudevents "github.com/cloudevents/sdk-go"
-	cehttp "github.com/cloudevents/sdk-go/pkg/cloudevents/transport/http"
-	vegeta "github.com/tsenart/vegeta/lib"
 	"math/rand"
 	"strconv"
 	"time"
+
+	cloudevents "github.com/cloudevents/sdk-go"
+	cehttp "github.com/cloudevents/sdk-go/pkg/cloudevents/transport/http"
+	vegeta "github.com/tsenart/vegeta/lib"
 )
 
 func init() {
@@ -59,6 +60,7 @@ func (cet CloudEventsTargeter) VegetaTargeter() vegeta.Targeter {
 		event.SetID(strconv.FormatUint(seqStr, 10))
 		event.SetType(cet.eventType)
 		event.SetSource(cet.eventSource)
+		event.SetTime(time.Now())
 
 		if err := event.SetData(payload); err != nil {
 			panic(err)
