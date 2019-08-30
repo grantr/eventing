@@ -19,13 +19,14 @@ package main
 import (
 	"context"
 	"flag"
-	"github.com/google/mako/helpers/go/quickstore"
-	"knative.dev/eventing/test/common"
 	"log"
 	"math/rand"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/google/mako/go/quickstore"
+	"knative.dev/eventing/test/common"
 
 	cloudevents "github.com/cloudevents/sdk-go"
 	vegeta "github.com/tsenart/vegeta/lib"

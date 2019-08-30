@@ -1313,7 +1313,7 @@
     "github.com/ghodss/yaml",
     "github.com/google/go-cmp/cmp",
     "github.com/google/go-cmp/cmp/cmpopts",
-    "github.com/google/mako/helpers/go/quickstore",
+    "github.com/google/mako/go/quickstore",
     "github.com/google/uuid",
     "github.com/kelseyhightower/envconfig",
     "github.com/pkg/errors",
