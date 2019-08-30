@@ -60,6 +60,8 @@ func (cet CloudEventsTargeter) VegetaTargeter() vegeta.Targeter {
 		event.SetType(cet.eventType)
 		event.SetSource(cet.eventSource)
 
+		seqStr = seqStr + 1
+
 		if err := event.SetData(payload); err != nil {
 			panic(err)
 		}
