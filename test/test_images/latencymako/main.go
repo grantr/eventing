@@ -268,6 +268,54 @@ func processReceiveEvent(event cloudevents.Event) {
 	receivedCh <- receivedState{eventId: id, at: time.Now()}
 }
 
+type RateResult struct {
+	ts  time.Time
+	val int64
+}
+
+type RateReducer struct {
+	metricKey string
+	q         *quickstore.Quickstore
+	inputCh   chan RateResult
+	windows   map[int64]int64
+	doneCh    chan struct{}
+}
+
+func NewRateReducer(q *quickstore.Quickstore, metricKey string) *RateReducer {
+	rr := &RateReducer{
+		metricKey: metricKey,
+		q:         q,
+		inputCh:   make(chan RateResult),
+		windows:   make(map[int64]int64),
+		doneCh:    make(chan struct{}),
+	}
+	go rr.process()
+	return rr
+}
+
+func (rr *RateReducer) Channel() chan RateResult {
+	return rr.inputCh
+}
+
+func (rr *RateReducer) Store() error {
+	close(rr.inputCh)
+	<-rr.doneCh
+	return nil
+}
+
+func (rr *RateReducer) process() {
+	for res := range rr.inputCh {
+		window := res.ts.Unix() // window size is always seconds
+		rr.windows[window] += res.val
+	}
+	for w, v := range rr.windows {
+		rr.q.AddSamplePoint(mako.XTime(time.Unix(w, 0)), map[string]float64{
+			rr.metricKey: float64(v),
+		})
+	}
+	close(rr.doneCh)
+}
+
 func processLatencies(q *quickstore.Quickstore, mapSize int) {
 	sentEventsMap := make(map[uint64]time.Time, mapSize)
 	for {
