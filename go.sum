@@ -120,8 +120,8 @@ github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDk
 github.com/cloudevents/sdk-go v1.1.2/go.mod h1:ss+jWJ88wypiewnPEzChSBzTYXGpdcILoN9YHk8uhTQ=
 github.com/cloudevents/sdk-go v1.2.0 h1:2AxI14EJUw1PclJ5gZJtzbxnHIfNMdi76Qq3P3G1BRU=
 github.com/cloudevents/sdk-go v1.2.0/go.mod h1:ss+jWJ88wypiewnPEzChSBzTYXGpdcILoN9YHk8uhTQ=
-github.com/cloudevents/sdk-go/v2 v2.0.0-preview8 h1:9CdwLDStqSoPxCkpnJQT0npptb8GjYcFtdELAQpXgqU=
-github.com/cloudevents/sdk-go/v2 v2.0.0-preview8/go.mod h1:akZr/joO3DfDft2KZnI91LEs15NSKIBNPYcAMBQ1xbk=
+github.com/cloudevents/sdk-go/v2 v2.0.0-RC1 h1:/cR5VkgD2/xmrmHryBgsvVn3O/p9cmysI6b5sapBQ4c=
+github.com/cloudevents/sdk-go/v2 v2.0.0-RC1/go.mod h1:akZr/joO3DfDft2KZnI91LEs15NSKIBNPYcAMBQ1xbk=
 github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGXZJjfX53e64911xZQV5JYwmTeXPW+k8Sc=
 github.com/coreos/bbolt v1.3.3/go.mod h1:iRUV2dpdMOn7Bo10OQBFzIJO9kkE559Wcmn+qkEiiKk=
 github.com/coreos/etcd v3.3.10+incompatible/go.mod h1:uF7uidLiAD3TWHmW31ZFd/JWoc32PjwdhPthX9715RE=

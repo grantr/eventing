@@ -4,7 +4,7 @@ go 1.14
 
 require (
 	github.com/cloudevents/sdk-go v1.2.0
-	github.com/cloudevents/sdk-go/v2 v2.0.0-preview8
+	github.com/cloudevents/sdk-go/v2 v2.0.0-RC1
 	github.com/ghodss/yaml v1.0.0
 	github.com/gobuffalo/envy v1.7.1 // indirect
 	github.com/golang/protobuf v1.3.5
